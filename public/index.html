@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rocket Crash</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">R</span>
+          <div>
+            <strong>Rocket</strong>
+            <span>实时爆点</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="connectionStatus" class="status-pill">连接中</span>
+          <span id="playerName" class="identity">未登录</span>
+          <strong id="balance" class="balance">0.00</strong>
+          <a class="ghost-link" href="/admin">后台</a>
+        </div>
+      </header>
+
+      <main class="game-layout">
+        <section class="stage-panel">
+          <div class="stage-head">
+            <div>
+              <span id="phaseLabel" class="phase-label">等待</span>
+              <strong id="roundId" class="round-id">-</strong>
+            </div>
+            <div class="round-clock">
+              <span id="clockLabel">--</span>
+            </div>
+          </div>
+          <div class="stage">
+            <canvas id="rocketCanvas" width="960" height="520" aria-label="rocket multiplier chart"></canvas>
+            <div class="multiplier-readout">
+              <strong id="multiplier">1.00x</strong>
+              <span id="resultLabel">准备下注</span>
+            </div>
+          </div>
+          <div class="fair-strip">
+            <span>Hash</span>
+            <code id="seedHash">-</code>
+          </div>
+          <div id="history" class="history-strip"></div>
+        </section>
+
+        <aside class="bet-panel">
+          <form id="betForm" class="bet-form">
+            <label>
+              <span>下注金额</span>
+              <input id="amountInput" type="number" min="1" step="1" value="10" />
+            </label>
+            <div class="chip-row">
+              <button type="button" data-chip="10">10</button>
+              <button type="button" data-chip="50">50</button>
+              <button type="button" data-chip="100">100</button>
+              <button type="button" data-chip="500">500</button>
+            </div>
+            <label>
+              <span>自动提现</span>
+              <input id="autoInput" type="number" min="1.01" step="0.01" value="2.00" />
+            </label>
+            <button id="placeBetButton" class="primary-button" type="submit">下注</button>
+            <button id="cashoutButton" class="cashout-button" type="button">立即提现</button>
+          </form>
+
+          <div class="my-bet">
+            <span>我的本局</span>
+            <strong id="myBetStatus">未下注</strong>
+            <small id="myBetDetail">-</small>
+          </div>
+
+          <div id="message" class="message" role="status"></div>
+        </aside>
+
+        <section class="table-panel">
+          <div class="section-title">
+            <h2>本局玩家</h2>
+            <span id="betCount">0 注</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>玩家</th>
+                  <th>下注</th>
+                  <th>自动</th>
+                  <th>状态</th>
+                  <th>返还</th>
+                </tr>
+              </thead>
+              <tbody id="betsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="loginOverlay" class="overlay">
+      <form id="loginForm" class="login-box">
+        <div class="brand large">
+          <span class="brand-mark">R</span>
+          <div>
+            <strong>Rocket</strong>
+            <span>进入游戏</span>
+          </div>
+        </div>
+        <label>
+          <span>玩家昵称</span>
+          <input id="usernameInput" maxlength="24" autocomplete="nickname" placeholder="输入昵称" />
+        </label>
+        <button class="primary-button" type="submit">开始</button>
+        <p id="loginError" class="form-error"></p>
+      </form>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "rocket-crash-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Play-money Rocket crash game with real-time player UI and admin console.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

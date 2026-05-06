@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rocket Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="admin-body">
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">R</span>
+          <div>
+            <strong>Rocket Admin</strong>
+            <span>运营后台</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="adminStatus" class="status-pill">未登录</span>
+          <button id="refreshButton" class="ghost-button" type="button">刷新</button>
+          <a class="ghost-link" href="/">玩家端</a>
+        </div>
+      </header>
+
+      <main id="adminApp" class="admin-layout locked">
+        <section class="metric-grid">
+          <div class="metric"><span>玩家</span><strong id="metricPlayers">0</strong></div>
+          <div class="metric"><span>在线</span><strong id="metricOnline">0</strong></div>
+          <div class="metric"><span>总下注</span><strong id="metricBet">0.00</strong></div>
+          <div class="metric"><span>总返还</span><strong id="metricPayout">0.00</strong></div>
+          <div class="metric"><span>平台盈亏</span><strong id="metricProfit">0.00</strong></div>
+          <div class="metric"><span>玩家余额</span><strong id="metricLiability">0.00</strong></div>
+        </section>
+
+        <section class="admin-panel wide">
+          <div class="section-title">
+            <h2>当前回合</h2>
+            <span id="adminRoundPhase">-</span>
+          </div>
+          <div class="round-admin-grid">
+            <label>
+              <span>回合 ID</span>
+              <input id="adminRoundId" readonly />
+            </label>
+            <label>
+              <span>当前倍率</span>
+              <input id="adminCurrentMultiplier" readonly />
+            </label>
+            <label>
+              <span>爆点</span>
+              <input id="adminCrashMultiplier" readonly />
+            </label>
+            <label>
+              <span>Hash</span>
+              <input id="adminSeedHash" readonly />
+            </label>
+          </div>
+          <form id="forceForm" class="inline-form">
+            <label>
+              <span>强制爆点</span>
+              <input id="forceMultiplier" type="number" step="0.01" placeholder="当前倍率" />
+            </label>
+            <button class="danger-button" type="submit">强制爆炸</button>
+            <button id="pauseButton" class="ghost-button" type="button">暂停</button>
+          </form>
+        </section>
+
+        <section class="admin-panel">
+          <div class="section-title">
+            <h2>游戏参数</h2>
+            <span>实时生效</span>
+          </div>
+          <form id="settingsForm" class="settings-form">
+            <label><span>下注倒计时 ms</span><input name="bettingDurationMs" type="number" /></label>
+            <label><span>局间等待 ms</span><input name="roundPauseMs" type="number" /></label>
+            <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /></label>
+            <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /></label>
+            <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /></label>
+            <label><span>初始积分</span><input name="demoCredit" type="number" step="0.01" /></label>
+            <label><span>House edge bps</span><input name="houseEdgeBps" type="number" /></label>
+            <label><span>最大倍率</span><input name="maxCrashMultiplier" type="number" /></label>
+            <button class="primary-button" type="submit">保存参数</button>
+          </form>
+        </section>
+
+        <section class="admin-panel">
+          <div class="section-title">
+            <h2>玩家管理</h2>
+            <input id="playerSearch" class="search-input" placeholder="搜索玩家" />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>玩家</th>
+                  <th>余额</th>
+                  <th>调整</th>
+                  <th>最近在线</th>
+                </tr>
+              </thead>
+              <tbody id="playersBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="admin-panel wide">
+          <div class="section-title">
+            <h2>回合记录</h2>
+            <span id="roundCount">0 局</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>爆点</th>
+                  <th>下注</th>
+                  <th>返还</th>
+                  <th>盈亏</th>
+                  <th>公平性</th>
+                </tr>
+              </thead>
+              <tbody id="roundsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="adminLoginOverlay" class="overlay">
+      <form id="adminLoginForm" class="login-box">
+        <div class="brand large">
+          <span class="brand-mark">R</span>
+          <div>
+            <strong>Rocket Admin</strong>
+            <span>后台登录</span>
+          </div>
+        </div>
+        <label>
+          <span>后台密码</span>
+          <input id="adminPassword" type="password" autocomplete="current-password" />
+        </label>
+        <button class="primary-button" type="submit">登录</button>
+        <p id="adminLoginError" class="form-error"></p>
+      </form>
+    </div>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>
