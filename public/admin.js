@@ -29,9 +29,11 @@ const ui = {
   roundsBody: $("#roundsBody")
 };
 
-let token = localStorage.getItem("rocket.adminToken") || "";
+let token = localStorage.getItem("rocket.adminToken") || "local-dev";
 let state = null;
 let pollTimer = null;
+let settingsDirty = false;
+let settingsSaving = false;
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("zh-CN", {
@@ -92,6 +94,7 @@ function lockAdmin() {
 
 async function refresh() {
   if (!token) return false;
+  if (settingsSaving) return false;
   try {
     state = await adminApi("/api/admin/overview");
     unlockAdmin();
@@ -137,18 +140,18 @@ function renderRound() {
   ui.pauseButton.textContent = state?.settings?.paused ? "恢复" : "暂停";
 }
 
-function renderSettings() {
+function renderSettings(force = false) {
   const settings = state?.settings;
   if (!settings) return;
-  if (ui.settingsForm.contains(document.activeElement)) return;
+  if (!force && settingsDirty) return;
   for (const element of ui.settingsForm.elements) {
     if (!element.name || settings[element.name] === undefined) continue;
     element.value = settings[element.name];
   }
 }
 
-function renderPlayers() {
-  if (ui.playersBody.contains(document.activeElement)) return;
+function renderPlayers(force = false) {
+  if (!force && ui.playersBody.contains(document.activeElement)) return;
   const query = ui.playerSearch.value.trim().toLowerCase();
   const players = (state?.players || []).filter((player) => {
     return !query || player.username.toLowerCase().includes(query) || player.id.toLowerCase().includes(query);
@@ -170,8 +173,8 @@ function renderPlayers() {
           <td>${formatMoney(player.balance)}</td>
           <td>
             <div class="credit-control">
-              <input data-credit-input="${escapeHtml(player.id)}" type="number" step="0.01" placeholder="+/-" />
-              <button data-credit-button="${escapeHtml(player.id)}" type="button">调整</button>
+              <input data-credit-input="${escapeHtml(player.id)}" type="number" step="0.01" placeholder="+100 / -50" />
+              <button data-credit-button="${escapeHtml(player.id)}" type="button">应用</button>
             </div>
           </td>
           <td>${player.lastSeenAt ? new Date(player.lastSeenAt).toLocaleString("zh-CN") : "-"}</td>
@@ -193,6 +196,7 @@ function renderRounds() {
     .map((round) => {
       const profit = Number(round.houseProfit || 0);
       const forced = round.forced ? " / forced" : "";
+      const highFlight = round.botOnlyHighFlight ? " / bot-high" : "";
       return `
         <tr>
           <td>${new Date(round.crashedAt).toLocaleString("zh-CN")}</td>
@@ -200,18 +204,18 @@ function renderRounds() {
           <td>${formatMoney(round.totalBet)}</td>
           <td>${formatMoney(round.totalPayout)}</td>
           <td style="color:${profit >= 0 ? "var(--green)" : "var(--red)"}">${formatMoney(profit)}</td>
-          <td class="hash-cell">${escapeHtml(round.seedHash)}${forced}</td>
+          <td class="hash-cell">${escapeHtml(round.seedHash)}${forced}${highFlight}</td>
         </tr>
       `;
     })
     .join("");
 }
 
-function render() {
+function render(options = {}) {
   renderMetrics();
   renderRound();
-  renderSettings();
-  renderPlayers();
+  renderSettings(Boolean(options.forceSettings));
+  renderPlayers(Boolean(options.forcePlayers));
   renderRounds();
 }
 
@@ -243,6 +247,8 @@ ui.refreshButton.addEventListener("click", refresh);
 
 ui.settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  settingsSaving = true;
+  clearInterval(pollTimer);
   const payload = {};
   for (const element of ui.settingsForm.elements) {
     if (!element.name) continue;
@@ -253,10 +259,18 @@ ui.settingsForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: payload
     });
-    render();
+    settingsDirty = false;
+    render({ forceSettings: true });
   } catch (error) {
     alert(error.message);
+  } finally {
+    settingsSaving = false;
+    startPolling();
   }
+});
+
+ui.settingsForm.addEventListener("input", () => {
+  settingsDirty = true;
 });
 
 ui.forceForm.addEventListener("submit", async (event) => {
@@ -268,7 +282,7 @@ ui.forceForm.addEventListener("submit", async (event) => {
       body: { multiplier: ui.forceMultiplier.value }
     });
     ui.forceMultiplier.value = "";
-    render();
+    render({ forcePlayers: true });
   } catch (error) {
     alert(error.message);
   }

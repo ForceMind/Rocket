@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rocket Crash</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,14 +14,14 @@
           <span class="brand-mark">R</span>
           <div>
             <strong>Rocket</strong>
-            <span>实时爆点</span>
+            <span>Live Crash</span>
           </div>
         </div>
         <div class="topbar-actions">
-          <span id="connectionStatus" class="status-pill">连接中</span>
-          <span id="playerName" class="identity">未登录</span>
+          <span id="connectionStatus" class="status-pill">Connecting</span>
+          <span id="playerName" class="identity">Guest</span>
           <strong id="balance" class="balance">0.00</strong>
-          <a class="ghost-link" href="/admin">后台</a>
+          <a class="ghost-link" href="/admin">Admin</a>
         </div>
       </header>
 
@@ -28,7 +29,7 @@
         <section class="stage-panel">
           <div class="stage-head">
             <div>
-              <span id="phaseLabel" class="phase-label">等待</span>
+              <span id="phaseLabel" class="phase-label">Waiting</span>
               <strong id="roundId" class="round-id">-</strong>
             </div>
             <div class="round-clock">
@@ -39,12 +40,8 @@
             <canvas id="rocketCanvas" width="960" height="520" aria-label="rocket multiplier chart"></canvas>
             <div class="multiplier-readout">
               <strong id="multiplier">1.00x</strong>
-              <span id="resultLabel">准备下注</span>
+              <span id="resultLabel">Place your bet</span>
             </div>
-          </div>
-          <div class="fair-strip">
-            <span>Hash</span>
-            <code id="seedHash">-</code>
           </div>
           <div id="history" class="history-strip"></div>
         </section>
@@ -52,7 +49,7 @@
         <aside class="bet-panel">
           <form id="betForm" class="bet-form">
             <label>
-              <span>下注金额</span>
+              <span>Bet Amount</span>
               <input id="amountInput" type="number" min="1" step="1" value="10" />
             </label>
             <div class="chip-row">
@@ -61,17 +58,21 @@
               <button type="button" data-chip="100">100</button>
               <button type="button" data-chip="500">500</button>
             </div>
-            <label>
-              <span>自动提现</span>
-              <input id="autoInput" type="number" min="1.01" step="0.01" value="2.00" />
+            <label class="switch-line">
+              <input id="autoToggle" type="checkbox" />
+              <span>Auto Cashout</span>
             </label>
-            <button id="placeBetButton" class="primary-button" type="submit">下注</button>
-            <button id="cashoutButton" class="cashout-button" type="button">立即提现</button>
+            <label>
+              <span>Cashout Multiplier</span>
+              <input id="autoInput" type="number" min="1.01" step="0.01" value="2.00" disabled />
+            </label>
+            <button id="placeBetButton" class="primary-button" type="submit">Place Bet</button>
+            <button id="cashoutButton" class="cashout-button" type="button">Cash Out</button>
           </form>
 
           <div class="my-bet">
-            <span>我的本局</span>
-            <strong id="myBetStatus">未下注</strong>
+            <span>My Round</span>
+            <strong id="myBetStatus">No Bet</strong>
             <small id="myBetDetail">-</small>
           </div>
 
@@ -80,18 +81,18 @@
 
         <section class="table-panel">
           <div class="section-title">
-            <h2>本局玩家</h2>
-            <span id="betCount">0 注</span>
+            <h2>Players This Round</h2>
+            <span id="betCount">0 bets</span>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>玩家</th>
-                  <th>下注</th>
-                  <th>自动</th>
-                  <th>状态</th>
-                  <th>返还</th>
+                  <th>Player</th>
+                  <th>Bet</th>
+                  <th>Auto</th>
+                  <th>Status</th>
+                  <th>Payout</th>
                 </tr>
               </thead>
               <tbody id="betsBody"></tbody>
@@ -107,14 +108,14 @@
           <span class="brand-mark">R</span>
           <div>
             <strong>Rocket</strong>
-            <span>进入游戏</span>
+            <span>Enter Game</span>
           </div>
         </div>
         <label>
-          <span>玩家昵称</span>
-          <input id="usernameInput" maxlength="24" autocomplete="nickname" placeholder="输入昵称" />
+          <span>Player Name</span>
+          <input id="usernameInput" maxlength="24" autocomplete="nickname" placeholder="Enter a name" />
         </label>
-        <button class="primary-button" type="submit">开始</button>
+        <button class="primary-button" type="submit">Start</button>
         <p id="loginError" class="form-error"></p>
       </form>
     </div>

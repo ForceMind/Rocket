@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rocket Admin</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="admin-body">
@@ -23,7 +24,7 @@
         </div>
       </header>
 
-      <main id="adminApp" class="admin-layout locked">
+      <main id="adminApp" class="admin-layout">
         <section class="metric-grid">
           <div class="metric"><span>玩家</span><strong id="metricPlayers">0</strong></div>
           <div class="metric"><span>在线</span><strong id="metricOnline">0</strong></div>
@@ -32,12 +33,16 @@
           <div class="metric"><span>平台盈亏</span><strong id="metricProfit">0.00</strong></div>
           <div class="metric"><span>玩家余额</span><strong id="metricLiability">0.00</strong></div>
         </section>
+        <section class="admin-panel wide compact-help">
+          <p class="section-help">顶部指标用于本地观察整体运营状态：总下注和总返还是历史回合累计，平台盈亏等于总下注减总返还，玩家余额是所有真实玩家当前积分合计。</p>
+        </section>
 
         <section class="admin-panel wide">
           <div class="section-title">
             <h2>当前回合</h2>
             <span id="adminRoundPhase">-</span>
           </div>
+          <p class="section-help">查看当前局状态、实时倍率、预设爆点和公平性 Hash。强制爆炸只适合本地测试，会把该局标记为人工干预。</p>
           <div class="round-admin-grid">
             <label>
               <span>回合 ID</span>
@@ -60,6 +65,7 @@
             <label>
               <span>强制爆点</span>
               <input id="forceMultiplier" type="number" step="0.01" placeholder="当前倍率" />
+              <small>留空表示按当前倍率立即爆炸；填写倍率会把当前局爆点改到该值。</small>
             </label>
             <button class="danger-button" type="submit">强制爆炸</button>
             <button id="pauseButton" class="ghost-button" type="button">暂停</button>
@@ -71,15 +77,24 @@
             <h2>游戏参数</h2>
             <span>实时生效</span>
           </div>
+          <p class="section-help">参数保存后写入本地 data/db.json。已开始的回合不会全部重算，下一局会完整使用最新配置。</p>
           <form id="settingsForm" class="settings-form">
-            <label><span>下注倒计时 ms</span><input name="bettingDurationMs" type="number" /></label>
-            <label><span>局间等待 ms</span><input name="roundPauseMs" type="number" /></label>
-            <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /></label>
-            <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /></label>
-            <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /></label>
-            <label><span>初始积分</span><input name="demoCredit" type="number" step="0.01" /></label>
-            <label><span>House edge bps</span><input name="houseEdgeBps" type="number" /></label>
-            <label><span>最大倍率</span><input name="maxCrashMultiplier" type="number" /></label>
+            <label><span>下注倒计时 ms</span><input name="bettingDurationMs" type="number" /><small>每局开始后允许下注的时间，单位毫秒。</small></label>
+            <label><span>局间等待 ms</span><input name="roundPauseMs" type="number" /><small>爆炸后到下一局开始的等待时间。</small></label>
+            <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /><small>玩家端实时状态刷新间隔，数值越小越顺滑。</small></label>
+            <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /><small>真实玩家每局最低下注积分。</small></label>
+            <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /><small>真实玩家每局最高下注积分。</small></label>
+            <label><span>初始积分</span><input name="demoCredit" type="number" step="0.01" /><small>新玩家第一次进入时获得的演示积分。</small></label>
+            <label><span>House edge bps</span><input name="houseEdgeBps" type="number" /><small>平台优势，100 bps 等于 1%。</small></label>
+            <label><span>1.00 爆炸 bps</span><input name="instantCrashBps" type="number" /><small>火箭刚起飞就 1.00x 爆炸的概率，100 bps 等于 1%。</small></label>
+            <label><span>最大倍率</span><input name="maxCrashMultiplier" type="number" /><small>随机爆点不会超过这个上限。</small></label>
+            <label><span>机器人最少</span><input name="botMinCount" type="number" /><small>每局至少生成多少个机器人。</small></label>
+            <label><span>机器人最多</span><input name="botMaxCount" type="number" /><small>每局最多生成多少个机器人。</small></label>
+            <label><span>机器人最小下注</span><input name="botMinBet" type="number" step="0.01" /><small>机器人下注随机范围的下限。</small></label>
+            <label><span>机器人最大下注</span><input name="botMaxBet" type="number" step="0.01" /><small>机器人下注随机范围的上限。</small></label>
+            <label><span>纯机器人高飞 bps</span><input name="botOnlyHighFlightBps" type="number" /><small>只有机器人下注时，触发高倍飞行的概率。</small></label>
+            <label><span>高飞最小倍率</span><input name="botOnlyHighFlightMin" type="number" /><small>触发高飞后，随机爆点下限。</small></label>
+            <label><span>高飞最大倍率</span><input name="botOnlyHighFlightMax" type="number" /><small>触发高飞后，随机爆点上限，默认可到 500x。</small></label>
             <button class="primary-button" type="submit">保存参数</button>
           </form>
         </section>
@@ -89,13 +104,14 @@
             <h2>玩家管理</h2>
             <input id="playerSearch" class="search-input" placeholder="搜索玩家" />
           </div>
+          <p class="section-help">“余额加减”用于本地测试调整真实玩家积分：输入正数是加积分，输入负数是扣积分。机器人不在这里管理。</p>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>玩家</th>
                   <th>余额</th>
-                  <th>调整</th>
+                  <th>余额加减</th>
                   <th>最近在线</th>
                 </tr>
               </thead>
@@ -109,6 +125,7 @@
             <h2>回合记录</h2>
             <span id="roundCount">0 局</span>
           </div>
+          <p class="section-help">记录历史爆点、总下注、总返还和平台盈亏。带 forced 的回合是后台强制爆炸，不应作为公平随机局验证。</p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -128,7 +145,7 @@
       </main>
     </div>
 
-    <div id="adminLoginOverlay" class="overlay">
+    <div id="adminLoginOverlay" class="overlay hidden">
       <form id="adminLoginForm" class="login-box">
         <div class="brand large">
           <span class="brand-mark">R</span>

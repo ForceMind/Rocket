@@ -17,6 +17,7 @@ const ui = {
   history: $("#history"),
   betForm: $("#betForm"),
   amountInput: $("#amountInput"),
+  autoToggle: $("#autoToggle"),
   autoInput: $("#autoInput"),
   placeBetButton: $("#placeBetButton"),
   cashoutButton: $("#cashoutButton"),
@@ -67,7 +68,7 @@ async function api(path, options = {}) {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || "请求失败");
+    throw new Error(data.error || "Request failed");
   }
   return data;
 }
@@ -105,11 +106,11 @@ function connectEvents() {
   if (!session?.playerId) return;
   if (source) source.close();
 
-  ui.connectionStatus.textContent = "连接中";
+  ui.connectionStatus.textContent = "Connecting";
   ui.connectionStatus.classList.remove("online");
   source = new EventSource(`/events?playerId=${encodeURIComponent(session.playerId)}`);
   source.addEventListener("open", () => {
-    ui.connectionStatus.textContent = "在线";
+    ui.connectionStatus.textContent = "Online";
     ui.connectionStatus.classList.add("online");
   });
   source.addEventListener("state", (event) => {
@@ -117,7 +118,7 @@ function connectEvents() {
     render();
   });
   source.addEventListener("error", () => {
-    ui.connectionStatus.textContent = "重连中";
+    ui.connectionStatus.textContent = "Reconnecting";
     ui.connectionStatus.classList.remove("online");
   });
 }
@@ -128,10 +129,10 @@ function getMyBet() {
 }
 
 function phaseText(phase) {
-  if (phase === "betting") return "下注中";
-  if (phase === "flying") return "飞行中";
-  if (phase === "crashed") return "已爆炸";
-  return "等待";
+  if (phase === "betting") return "Betting";
+  if (phase === "flying") return "Flying";
+  if (phase === "crashed") return "Crashed";
+  return "Waiting";
 }
 
 function renderClock(round) {
@@ -162,9 +163,9 @@ function renderHistory() {
 
 function renderBets() {
   const bets = snapshot?.round?.bets || [];
-  ui.betCount.textContent = `${bets.length} 注`;
+  ui.betCount.textContent = `${bets.length} ${bets.length === 1 ? "bet" : "bets"}`;
   if (bets.length === 0) {
-    ui.betsBody.innerHTML = `<tr><td colspan="5">暂无下注</td></tr>`;
+    ui.betsBody.innerHTML = `<tr><td colspan="5">No bets yet</td></tr>`;
     return;
   }
 
@@ -172,13 +173,14 @@ function renderBets() {
     .map((bet) => {
       const statusLabel =
         bet.status === "cashed"
-          ? `已提现 ${formatMultiplier(bet.cashoutMultiplier)}`
+          ? `Cashed ${formatMultiplier(bet.cashoutMultiplier)}`
           : bet.status === "lost"
-            ? "爆炸"
-            : "等待";
+            ? "Lost"
+            : "Open";
+      const botBadge = bet.isBot ? ` <small>BOT</small>` : "";
       return `
         <tr>
-          <td>${escapeHtml(bet.username)}</td>
+          <td>${escapeHtml(bet.username)}${botBadge}</td>
           <td>${formatMoney(bet.amount)}</td>
           <td>${bet.autoCashout ? formatMultiplier(bet.autoCashout) : "-"}</td>
           <td class="state-${bet.status}">${statusLabel}</td>
@@ -193,20 +195,20 @@ function renderMyBet() {
   const bet = getMyBet();
   const round = snapshot?.round;
   if (!bet) {
-    ui.myBetStatus.textContent = "未下注";
+    ui.myBetStatus.textContent = "No Bet";
     ui.myBetDetail.textContent = "-";
     return;
   }
 
   if (bet.status === "open") {
-    ui.myBetStatus.textContent = round?.phase === "flying" ? "可提现" : "等待起飞";
-    ui.myBetDetail.textContent = `${formatMoney(bet.amount)} / 自动 ${bet.autoCashout ? formatMultiplier(bet.autoCashout) : "-"}`;
+    ui.myBetStatus.textContent = round?.phase === "flying" ? "Ready to Cash Out" : "Waiting for Launch";
+    ui.myBetDetail.textContent = `${formatMoney(bet.amount)} / Auto ${bet.autoCashout ? formatMultiplier(bet.autoCashout) : "Off"}`;
   } else if (bet.status === "cashed") {
-    ui.myBetStatus.textContent = `已提现 ${formatMultiplier(bet.cashoutMultiplier)}`;
-    ui.myBetDetail.textContent = `返还 ${formatMoney(bet.payout)}`;
+    ui.myBetStatus.textContent = `Cashed ${formatMultiplier(bet.cashoutMultiplier)}`;
+    ui.myBetDetail.textContent = `Payout ${formatMoney(bet.payout)}`;
   } else {
-    ui.myBetStatus.textContent = "已爆炸";
-    ui.myBetDetail.textContent = `损失 ${formatMoney(bet.amount)}`;
+    ui.myBetStatus.textContent = "Lost";
+    ui.myBetDetail.textContent = `Lost ${formatMoney(bet.amount)}`;
   }
 }
 
@@ -220,34 +222,36 @@ function renderActions() {
   ui.cashoutButton.disabled = !canCashout;
   ui.cashoutButton.classList.toggle("visible", myBet?.status === "open");
   if (myBet?.status === "open" && round?.phase === "flying") {
-    ui.cashoutButton.textContent = `立即提现 ${formatMultiplier(round.currentMultiplier)}`;
+    ui.cashoutButton.textContent = `Cash Out ${formatMultiplier(round.currentMultiplier)}`;
   } else {
-    ui.cashoutButton.textContent = "立即提现";
+    ui.cashoutButton.textContent = "Cash Out";
   }
 }
 
 function render() {
   const player = snapshot?.player;
   const round = snapshot?.round;
-  ui.playerName.textContent = player?.username || "未登录";
+  ui.playerName.textContent = player?.username || "Guest";
   ui.balance.textContent = formatMoney(player?.balance || 0);
   ui.phaseLabel.textContent = phaseText(round?.phase);
   ui.phaseLabel.className = `phase-label ${round?.phase || ""}`;
   ui.roundId.textContent = round?.id ? round.id.slice(-10) : "-";
   ui.multiplier.textContent = formatMultiplier(round?.currentMultiplier || round?.crashMultiplier || 1);
-  ui.seedHash.textContent = round?.seedHash || "-";
+  if (ui.seedHash) {
+    ui.seedHash.textContent = round?.seedHash || "-";
+  }
   renderClock(round);
 
   if (snapshot?.settings?.paused && (!round || round.phase === "crashed")) {
-    ui.resultLabel.textContent = "已暂停";
+    ui.resultLabel.textContent = "Paused";
   } else if (round?.phase === "betting") {
-    ui.resultLabel.textContent = "准备下注";
+    ui.resultLabel.textContent = "Place your bet";
   } else if (round?.phase === "flying") {
-    ui.resultLabel.textContent = "飞行中";
+    ui.resultLabel.textContent = "Flying";
   } else if (round?.phase === "crashed") {
-    ui.resultLabel.textContent = `爆点 ${formatMultiplier(round.crashMultiplier)}`;
+    ui.resultLabel.textContent = `Crashed at ${formatMultiplier(round.crashMultiplier)}`;
   } else {
-    ui.resultLabel.textContent = "等待";
+    ui.resultLabel.textContent = "Waiting";
   }
 
   renderHistory();
@@ -307,10 +311,11 @@ function setupCanvas() {
     const padX = Math.max(28, width * 0.06);
     const padY = Math.max(32, height * 0.12);
     const progress = clamp(Math.log(multiplier) / Math.log(12), 0, 1);
-    const x = padX + progress * (width - padX * 2);
-    const y = height - padY - progress * (height - padY * 2);
+    const point = curvePoint(width, height, padX, padY, progress);
+    const x = point.x;
+    const y = point.y;
 
-    drawTrail(ctx, padX, height - padY, x, y);
+    drawTrail(ctx, width, height, padX, padY, progress);
     if (round?.phase === "crashed") {
       drawExplosion(ctx, x, y, timestamp);
     } else {
@@ -356,15 +361,33 @@ function drawGrid(ctx, width, height) {
   ctx.restore();
 }
 
-function drawTrail(ctx, startX, startY, endX, endY) {
+function curvePoint(width, height, padX, padY, progress) {
+  const usableX = width - padX * 2;
+  const usableY = height - padY * 2;
+  const easedY = Math.pow(clamp(progress, 0, 1), 1.45);
+  return {
+    x: padX + progress * usableX,
+    y: height - padY - easedY * usableY
+  };
+}
+
+function drawTrail(ctx, width, height, padX, padY, progress) {
   ctx.save();
   ctx.strokeStyle = "#4ed49b";
   ctx.lineWidth = 4;
   ctx.shadowColor = "rgba(78, 212, 155, 0.55)";
   ctx.shadowBlur = 18;
   ctx.beginPath();
-  ctx.moveTo(startX, startY);
-  ctx.bezierCurveTo(startX + 120, startY - 24, endX - 120, endY + 84, endX, endY);
+  const steps = Math.max(2, Math.ceil(progress * 80));
+  for (let i = 0; i <= steps; i += 1) {
+    const t = progress * (i / steps);
+    const point = curvePoint(width, height, padX, padY, t);
+    if (i === 0) {
+      ctx.moveTo(point.x, point.y);
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
+  }
   ctx.stroke();
   ctx.restore();
 }
@@ -373,7 +396,7 @@ function drawRocket(ctx, x, y, timestamp) {
   const bob = timestamp ? Math.sin(timestamp * 0.012) * 2 : 0;
   ctx.save();
   ctx.translate(x, y + bob);
-  ctx.rotate(-0.72);
+  ctx.rotate(0.72);
   ctx.shadowColor = "rgba(244, 184, 74, 0.45)";
   ctx.shadowBlur = 24;
 
@@ -475,11 +498,11 @@ ui.betForm.addEventListener("submit", async (event) => {
       body: {
         playerId: session.playerId,
         amount: ui.amountInput.value,
-        autoCashout: ui.autoInput.value
+        autoCashout: ui.autoToggle.checked ? ui.autoInput.value : null
       }
     });
     snapshot = data.state;
-    showMessage("下注成功");
+    showMessage("Bet placed");
     render();
   } catch (error) {
     showMessage(error.message, true);
@@ -497,7 +520,7 @@ ui.cashoutButton.addEventListener("click", async () => {
       body: { playerId: session.playerId }
     });
     snapshot = data.state;
-    showMessage("提现成功");
+    showMessage("Cashed out");
     render();
   } catch (error) {
     showMessage(error.message, true);
@@ -510,6 +533,10 @@ document.querySelectorAll("[data-chip]").forEach((button) => {
   button.addEventListener("click", () => {
     ui.amountInput.value = button.dataset.chip;
   });
+});
+
+ui.autoToggle.addEventListener("change", () => {
+  ui.autoInput.disabled = !ui.autoToggle.checked;
 });
 
 setInterval(() => {

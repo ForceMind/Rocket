@@ -19,9 +19,27 @@ const DEFAULT_SETTINGS = {
   maxBetCents: 100000,
   demoCreditCents: 100000,
   houseEdgeBps: 150,
+  instantCrashBps: 150,
   maxCrashMultiplier: 100,
+  botsEnabled: true,
+  botMinCount: 14,
+  botMaxCount: 34,
+  botMinBetCents: 100,
+  botMaxBetCents: 25000,
+  botOnlyHighFlightBps: 800,
+  botOnlyHighFlightMin: 100,
+  botOnlyHighFlightMax: 500,
   paused: false
 };
+
+const ADMIN_AUTH_ENABLED = process.env.ADMIN_AUTH === "1";
+
+const BOT_NAMES = [
+  "Astra", "Nova", "Orion", "Vega", "Luna", "Atlas", "Comet", "Cosmo",
+  "Raptor", "Blaze", "Echo", "Pulse", "Zenith", "Orbit", "Meteor", "Ion",
+  "Apollo", "Kepler", "Titan", "RocketX", "Stellar", "Ranger", "Drift", "Flux",
+  "Vector", "Solar", "Nimbus", "Voyager", "Falcon", "Helix", "Astro", "Quasar"
+];
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -47,6 +65,14 @@ function nowIso() {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomChoice(items) {
+  return items[Math.floor(Math.random() * items.length)];
 }
 
 function newId(prefix) {
@@ -153,7 +179,7 @@ function sanitizeUsername(username) {
 function getOrCreatePlayer(username) {
   const cleanUsername = sanitizeUsername(username);
   if (cleanUsername.length < 2) {
-    throw httpError(400, "用户名至少需要 2 个字符");
+    throw httpError(400, "Player name must be at least 2 characters");
   }
 
   const existing = Object.values(db.players).find(
@@ -182,7 +208,7 @@ function getOrCreatePlayer(username) {
 function getPlayer(playerId) {
   const player = db.players[String(playerId || "")];
   if (!player) {
-    throw httpError(404, "玩家不存在，请重新登录");
+    throw httpError(404, "Player not found. Please sign in again");
   }
   player.lastSeenAt = nowIso();
   return player;
@@ -198,15 +224,124 @@ function crashPointFor(serverSeed, nonce, settings = db.settings) {
   const denominator = 0x10000000000000n;
   let random = Number(sample) / Number(denominator);
   random = clamp(random, Number.EPSILON, 1 - Number.EPSILON);
+  const instantCrashChance = clamp((settings.instantCrashBps || 0) / 10000, 0, 1);
+
+  if (random < instantCrashChance) {
+    return {
+      multiplier: 1,
+      hmac
+    };
+  }
+
+  const adjustedRandom = instantCrashChance >= 1
+    ? 0
+    : (random - instantCrashChance) / (1 - instantCrashChance);
 
   const houseFactor = clamp(1 - settings.houseEdgeBps / 10000, 0.5, 1);
-  const raw = houseFactor / (1 - random);
-  const crash = Math.floor(raw * 100) / 100;
+  const raw = houseFactor / (1 - adjustedRandom);
+  const crash = Math.max(1.01, Math.floor(raw * 100) / 100);
 
   return {
-    multiplier: Number(clamp(crash, 1, settings.maxCrashMultiplier).toFixed(2)),
+    multiplier: Number(clamp(crash, 1.01, settings.maxCrashMultiplier).toFixed(2)),
     hmac
   };
+}
+
+function botBetAmountCents() {
+  const min = Math.max(100, db.settings.botMinBetCents || db.settings.minBetCents);
+  const max = Math.max(min, db.settings.botMaxBetCents || db.settings.maxBetCents);
+  const amount = randomInt(Math.ceil(min / 100), Math.floor(max / 100)) * 100;
+  return clamp(amount, db.settings.minBetCents, db.settings.maxBetCents);
+}
+
+function botCashoutMultiplier() {
+  const roll = Math.random();
+  let value;
+  if (roll < 0.58) {
+    value = 1.15 + Math.random() * 1.35;
+  } else if (roll < 0.88) {
+    value = 2.5 + Math.random() * 3.5;
+  } else {
+    value = 6 + Math.random() * 14;
+  }
+  return Number(clamp(value, 1.01, db.settings.maxCrashMultiplier).toFixed(2));
+}
+
+function randomMultiplier(min, max) {
+  const lower = Math.min(min, max);
+  const upper = Math.max(min, max);
+  return Number((randomInt(Math.round(lower * 100), Math.round(upper * 100)) / 100).toFixed(2));
+}
+
+function hasHumanBet(round) {
+  return round.bets.some((bet) => !bet.isBot);
+}
+
+function applyBotOnlyHighFlight() {
+  if (!currentRound || currentRound.botOnlyHighFlightChecked) return false;
+  currentRound.botOnlyHighFlightChecked = true;
+
+  if (!db.settings.botsEnabled || currentRound.bets.length === 0 || hasHumanBet(currentRound)) {
+    return false;
+  }
+
+  const chance = clamp((db.settings.botOnlyHighFlightBps || 0) / 10000, 0, 1);
+  if (Math.random() >= chance) {
+    return false;
+  }
+
+  const min = Number(db.settings.botOnlyHighFlightMin || 100);
+  const max = Number(db.settings.botOnlyHighFlightMax || 500);
+  currentRound.crashMultiplier = randomMultiplier(min, max);
+  currentRound.botOnlyHighFlight = true;
+  return true;
+}
+
+function createBotPlan(createdAt) {
+  if (!db.settings.botsEnabled) return [];
+  const minCount = Math.max(0, Number(db.settings.botMinCount || 0));
+  const maxCount = Math.max(minCount, Number(db.settings.botMaxCount || minCount));
+  const count = randomInt(minCount, maxCount);
+  const latestPlaceMs = Math.max(800, db.settings.bettingDurationMs - 450);
+
+  return Array.from({ length: count }, (_, index) => {
+    const name = `${randomChoice(BOT_NAMES)}${randomInt(10, 99)}`;
+    return {
+      id: newId("botplan"),
+      name,
+      placeAt: createdAt + randomInt(250, latestPlaceMs),
+      amountCents: botBetAmountCents(),
+      autoCashout: botCashoutMultiplier(),
+      placed: false,
+      index
+    };
+  }).sort((a, b) => a.placeAt - b.placeAt);
+}
+
+function placeDueBotBets(timestamp) {
+  if (!currentRound || currentRound.phase !== "betting" || !currentRound.botPlan) return false;
+  let changed = false;
+  for (const bot of currentRound.botPlan) {
+    if (bot.placed || timestamp < bot.placeAt) continue;
+    bot.placed = true;
+    currentRound.bets.push({
+      id: newId("bet"),
+      roundId: currentRound.id,
+      playerId: `bot_${bot.id}`,
+      username: bot.name,
+      isBot: true,
+      amountCents: bot.amountCents,
+      autoCashout: bot.autoCashout,
+      status: "open",
+      cashoutMode: null,
+      cashoutMultiplier: null,
+      payoutCents: 0,
+      placedAt: nowIso(),
+      settledAt: null
+    });
+    changed = true;
+  }
+  return changed;
 }
 
 function multiplierAt(timestamp = Date.now()) {
@@ -215,7 +350,8 @@ function multiplierAt(timestamp = Date.now()) {
   }
   const elapsed = Math.max(0, timestamp - currentRound.launchAt);
   const raw = Math.exp(elapsed / 6500);
-  const capped = clamp(raw, 1, db.settings.maxCrashMultiplier);
+  const cap = Math.max(db.settings.maxCrashMultiplier, currentRound.crashMultiplier || 1);
+  const capped = clamp(raw, 1, cap);
   return Math.floor(capped * 100) / 100;
 }
 
@@ -244,7 +380,10 @@ function createRound() {
     crashedAt: null,
     nextRoundAt: null,
     forced: false,
-    bets: []
+    botOnlyHighFlight: false,
+    botOnlyHighFlightChecked: false,
+    bets: [],
+    botPlan: createBotPlan(createdAt)
   };
   saveDb();
   broadcastState(true);
@@ -252,6 +391,7 @@ function createRound() {
 
 function startFlying() {
   if (!currentRound || currentRound.phase !== "betting") return;
+  applyBotOnlyHighFlight();
   currentRound.phase = "flying";
   currentRound.launchAt = Date.now();
   currentRound.currentMultiplier = 1;
@@ -288,6 +428,7 @@ function finishRound() {
     hmac: currentRound.hmac,
     crashMultiplier: currentRound.crashMultiplier,
     forced: currentRound.forced,
+    botOnlyHighFlight: currentRound.botOnlyHighFlight,
     startedAt: new Date(currentRound.createdAt).toISOString(),
     crashedAt: new Date(crashedAt).toISOString(),
     totalBet: centsToAmount(totalBetCents),
@@ -322,7 +463,7 @@ function processAutoCashouts(currentMultiplier) {
 
 function cashoutBet(bet, multiplier, mode) {
   const player = db.players[bet.playerId];
-  if (!player || bet.status !== "open") return null;
+  if ((!player && !bet.isBot) || bet.status !== "open") return null;
 
   const safeMultiplier = Number(clamp(multiplier, 1, db.settings.maxCrashMultiplier).toFixed(2));
   const payoutCents = Math.floor((bet.amountCents * Math.round(safeMultiplier * 100)) / 100);
@@ -333,8 +474,10 @@ function cashoutBet(bet, multiplier, mode) {
   bet.payoutCents = payoutCents;
   bet.settledAt = nowIso();
 
-  player.balanceCents += payoutCents;
-  player.updatedAt = nowIso();
+  if (player) {
+    player.balanceCents += payoutCents;
+    player.updatedAt = nowIso();
+  }
   return bet;
 }
 
@@ -347,7 +490,14 @@ function tick() {
   }
 
   if (currentRound.phase === "betting" && timestamp >= currentRound.bettingEndsAt) {
+    placeDueBotBets(timestamp);
     startFlying();
+  } else if (currentRound.phase === "betting") {
+    const changed = placeDueBotBets(timestamp);
+    if (changed) {
+      saveDb();
+      broadcastState(true);
+    }
   }
 
   if (currentRound.phase === "flying") {
@@ -380,6 +530,7 @@ function publicBet(bet) {
     id: bet.id,
     playerId: bet.playerId,
     username: bet.username,
+    isBot: Boolean(bet.isBot),
     amount: centsToAmount(bet.amountCents),
     autoCashout: bet.autoCashout,
     status: bet.status,
@@ -404,6 +555,7 @@ function publicRound(round = currentRound) {
     crashedAt: round.crashedAt,
     nextRoundAt: round.nextRoundAt,
     forced: round.forced,
+    botOnlyHighFlight: round.botOnlyHighFlight,
     bets: round.bets.map(publicBet)
   };
   if (round.phase === "crashed") {
@@ -458,7 +610,9 @@ function adminSnapshot() {
       ...db.settings,
       minBet: centsToAmount(db.settings.minBetCents),
       maxBet: centsToAmount(db.settings.maxBetCents),
-      demoCredit: centsToAmount(db.settings.demoCreditCents)
+      demoCredit: centsToAmount(db.settings.demoCreditCents),
+      botMinBet: centsToAmount(db.settings.botMinBetCents),
+      botMaxBet: centsToAmount(db.settings.botMaxBetCents)
     },
     metrics: {
       players: playerList.length,
@@ -548,6 +702,9 @@ function readJson(req) {
 }
 
 function requireAdmin(req) {
+  if (!ADMIN_AUTH_ENABLED) {
+    return { localDev: true };
+  }
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   const session = adminTokens.get(token);
@@ -587,22 +744,22 @@ async function handleApi(req, res, url) {
     const autoCashout = body.autoCashout ? Number(body.autoCashout) : null;
 
     if (!currentRound || currentRound.phase !== "betting") {
-      throw httpError(409, "当前不在下注阶段");
+      throw httpError(409, "Betting is closed for this round");
     }
     if (!Number.isInteger(amountCents) || amountCents < db.settings.minBetCents) {
-      throw httpError(400, `最小下注 ${centsToAmount(db.settings.minBetCents)}`);
+      throw httpError(400, `Minimum bet is ${centsToAmount(db.settings.minBetCents)}`);
     }
     if (amountCents > db.settings.maxBetCents) {
-      throw httpError(400, `最大下注 ${centsToAmount(db.settings.maxBetCents)}`);
+      throw httpError(400, `Maximum bet is ${centsToAmount(db.settings.maxBetCents)}`);
     }
     if (amountCents > player.balanceCents) {
-      throw httpError(400, "余额不足");
+      throw httpError(400, "Insufficient balance");
     }
     if (currentRound.bets.some((bet) => bet.playerId === player.id)) {
-      throw httpError(409, "本局已经下注");
+      throw httpError(409, "You already placed a bet this round");
     }
     if (autoCashout !== null && (!Number.isFinite(autoCashout) || autoCashout < 1.01 || autoCashout > db.settings.maxCrashMultiplier)) {
-      throw httpError(400, "自动提现倍率无效");
+      throw httpError(400, "Auto cashout multiplier is invalid");
     }
 
     player.balanceCents -= amountCents;
@@ -632,16 +789,16 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const player = getPlayer(body.playerId);
     if (!currentRound || currentRound.phase !== "flying") {
-      throw httpError(409, "当前不在飞行阶段");
+      throw httpError(409, "The rocket is not flying yet");
     }
     const bet = currentRound.bets.find((item) => item.playerId === player.id && item.status === "open");
     if (!bet) {
-      throw httpError(404, "没有可提现的下注");
+      throw httpError(404, "No open bet to cash out");
     }
     const currentMultiplier = multiplierAt();
     if (currentMultiplier >= currentRound.crashMultiplier) {
       finishRound();
-      throw httpError(409, "火箭已经爆炸");
+      throw httpError(409, "The rocket has already crashed");
     }
     cashoutBet(bet, currentMultiplier, "manual");
     audit("bet.cashout", {
@@ -657,6 +814,9 @@ async function handleApi(req, res, url) {
 
   if (route === "POST /api/admin/login") {
     const body = await readJson(req);
+    if (!ADMIN_AUTH_ENABLED) {
+      return sendJson(res, 200, { token: "local-dev", admin: adminSnapshot() });
+    }
     if (String(body.password || "") !== ADMIN_PASSWORD) {
       throw httpError(401, "后台密码错误");
     }
@@ -689,7 +849,13 @@ async function handleApi(req, res, url) {
       roundPauseMs: [1000, 15000],
       tickRateMs: [50, 1000],
       houseEdgeBps: [0, 2500],
-      maxCrashMultiplier: [2, 1000]
+      instantCrashBps: [0, 10000],
+      maxCrashMultiplier: [2, 1000],
+      botMinCount: [0, 80],
+      botMaxCount: [0, 120],
+      botOnlyHighFlightBps: [0, 10000],
+      botOnlyHighFlightMin: [2, 1000],
+      botOnlyHighFlightMax: [2, 1000]
     };
 
     for (const [key, range] of Object.entries(numericFields)) {
@@ -715,6 +881,22 @@ async function handleApi(req, res, url) {
       const cents = amountToCents(body.demoCredit);
       if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "初始积分无效");
       db.settings.demoCreditCents = cents;
+    }
+    if (body.botMinBet !== undefined) {
+      const cents = amountToCents(body.botMinBet);
+      if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "机器人最小下注无效");
+      db.settings.botMinBetCents = cents;
+    }
+    if (body.botMaxBet !== undefined) {
+      const cents = amountToCents(body.botMaxBet);
+      if (!Number.isInteger(cents) || cents < db.settings.botMinBetCents) throw httpError(400, "机器人最大下注无效");
+      db.settings.botMaxBetCents = cents;
+    }
+    if (db.settings.botMinCount > db.settings.botMaxCount) {
+      throw httpError(400, "机器人最小数量不能大于最大数量");
+    }
+    if (db.settings.botOnlyHighFlightMin > db.settings.botOnlyHighFlightMax) {
+      throw httpError(400, "纯机器人高飞最小倍率不能大于最大倍率");
     }
     if (db.settings.minBetCents > db.settings.maxBetCents) {
       throw httpError(400, "最小下注不能大于最大下注");
@@ -817,6 +999,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/events") {
       return handleEvents(req, res, url);
     }
+    if (req.method === "GET" && url.pathname === "/favicon.ico") {
+      res.writeHead(302, { Location: "/favicon.svg" });
+      res.end();
+      return;
+    }
     if (url.pathname.startsWith("/api/")) {
       return await handleApi(req, res, url);
     }
@@ -840,7 +1027,9 @@ createRound();
 server.listen(PORT, () => {
   console.log(`Rocket Crash Platform running at http://localhost:${PORT}`);
   console.log(`Admin console: http://localhost:${PORT}/admin`);
-  if (ADMIN_PASSWORD === "admin123") {
+  if (!ADMIN_AUTH_ENABLED) {
+    console.log("Admin authentication is disabled for local development. Set ADMIN_AUTH=1 to enable it.");
+  } else if (ADMIN_PASSWORD === "admin123") {
     console.log("Default admin password is admin123. Set ADMIN_PASSWORD before sharing the server.");
   }
 });
