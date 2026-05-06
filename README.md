@@ -54,6 +54,62 @@ $env:ADMIN_PASSWORD="change-me"
 node server.js
 ```
 
+## OpenCloudOS 部署
+
+把项目上传到服务器后，在项目目录执行：
+
+```bash
+sudo bash deploy-opencloudos.sh
+```
+
+部署脚本会做这些事：
+
+- 检查并尝试安装 Node.js。
+- 把项目部署到 `/opt/rocket-crash-platform`。
+- 创建 systemd 服务 `rocket-crash`。
+- 使用 `start-linux.sh` 启动服务。
+- 自动选择可用端口。
+- 如果 firewalld 正在运行，会开放端口范围。
+
+默认端口规则：
+
+```text
+BASE_PORT=3000
+MAX_PORT=3050
+```
+
+启动时会先尝试 `3000`，如果被占用就尝试 `3001`，一直递增到 `3050`。实际选中的端口会写入：
+
+```text
+/opt/rocket-crash-platform/data/runtime.env
+```
+
+自定义端口范围：
+
+```bash
+sudo BASE_PORT=3100 MAX_PORT=3150 bash deploy-opencloudos.sh
+```
+
+云服务器部署默认开启后台密码。如果不传 `ADMIN_PASSWORD`，脚本会自动生成一个并在部署结束时打印：
+
+```bash
+sudo ADMIN_PASSWORD='your-strong-password' bash deploy-opencloudos.sh
+```
+
+常用管理命令：
+
+```bash
+sudo systemctl status rocket-crash
+sudo systemctl restart rocket-crash
+sudo journalctl -u rocket-crash -f
+```
+
+如果只是 Linux 手动启动，不安装 systemd 服务：
+
+```bash
+BASE_PORT=3000 MAX_PORT=3050 bash start-linux.sh
+```
+
 ## 后台功能说明
 
 - 顶部指标：用于观察本地演示数据。总下注和总返还是历史回合累计，平台盈亏等于总下注减总返还，玩家余额是所有真实玩家当前积分合计。
