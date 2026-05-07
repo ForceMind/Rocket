@@ -13,6 +13,7 @@ const ui = {
   clockLabel: $("#clockLabel"),
   multiplier: $("#multiplier"),
   resultLabel: $("#resultLabel"),
+  cashoutEffects: $("#cashoutEffects"),
   seedHash: $("#seedHash"),
   history: $("#history"),
   betForm: $("#betForm"),
@@ -34,6 +35,8 @@ let snapshot = null;
 let source = null;
 let messageTimer = null;
 let lastDrawAt = 0;
+let trackedRoundId = null;
+let betStatusById = new Map();
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("zh-CN", {
@@ -177,10 +180,9 @@ function renderBets() {
           : bet.status === "lost"
             ? "Lost"
             : "Open";
-      const botBadge = bet.isBot ? ` <small>BOT</small>` : "";
       return `
         <tr>
-          <td>${escapeHtml(bet.username)}${botBadge}</td>
+          <td>${escapeHtml(bet.username)}</td>
           <td>${formatMoney(bet.amount)}</td>
           <td>${bet.autoCashout ? formatMultiplier(bet.autoCashout) : "-"}</td>
           <td class="state-${bet.status}">${statusLabel}</td>
@@ -228,9 +230,57 @@ function renderActions() {
   }
 }
 
+function trackCashoutEffects(round) {
+  if (!round?.id) return;
+  const bets = round.bets || [];
+
+  if (trackedRoundId !== round.id) {
+    trackedRoundId = round.id;
+    betStatusById = new Map(bets.map((bet) => [bet.id, bet.status]));
+    return;
+  }
+
+  for (const bet of bets) {
+    const previousStatus = betStatusById.get(bet.id);
+    if (previousStatus && previousStatus !== "cashed" && bet.status === "cashed") {
+      spawnCashoutEffect(bet);
+    }
+    betStatusById.set(bet.id, bet.status);
+  }
+}
+
+function spawnCashoutEffect(bet) {
+  if (!ui.cashoutEffects || !ui.canvas) return;
+  const rect = ui.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
+  const width = rect.width;
+  const height = rect.height;
+  const padX = Math.max(28, width * 0.06);
+  const padY = Math.max(32, height * 0.12);
+  const multiplier = Number(bet.cashoutMultiplier || snapshot?.round?.currentMultiplier || 1);
+  const progress = clamp(Math.log(Math.max(multiplier, 1)) / Math.log(12), 0, 1);
+  const point = curvePoint(width, height, padX, padY, progress);
+  const offset = (Math.random() - 0.5) * 42;
+
+  const element = document.createElement("div");
+  element.className = "cashout-pop";
+  element.style.left = `${clamp(point.x + offset, 52, width - 52)}px`;
+  element.style.top = `${clamp(point.y - 12, 66, height - 18)}px`;
+
+  const name = document.createElement("strong");
+  name.textContent = bet.username;
+  const payout = document.createElement("span");
+  payout.textContent = `+${formatMoney(bet.payout)}`;
+  element.append(name, payout);
+  ui.cashoutEffects.append(element);
+  setTimeout(() => element.remove(), 1700);
+}
+
 function render() {
   const player = snapshot?.player;
   const round = snapshot?.round;
+  trackCashoutEffects(round);
   ui.playerName.textContent = player?.username || "Guest";
   ui.balance.textContent = formatMoney(player?.balance || 0);
   ui.phaseLabel.textContent = phaseText(round?.phase);
