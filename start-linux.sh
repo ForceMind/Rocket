@@ -8,6 +8,7 @@ NODE_BIN="${NODE_BIN:-}"
 HTTPS_KEY_PATH="${HTTPS_KEY_PATH:-${SSL_KEY_PATH:-${TLS_KEY_PATH:-}}}"
 HTTPS_CERT_PATH="${HTTPS_CERT_PATH:-${SSL_CERT_PATH:-${TLS_CERT_PATH:-}}}"
 HTTPS_CA_PATH="${HTTPS_CA_PATH:-${SSL_CA_PATH:-${TLS_CA_PATH:-}}}"
+PUBLIC_WS_URL="${PUBLIC_WS_URL:-${WS_URL:-}}"
 
 if [[ -z "$NODE_BIN" ]]; then
   if command -v node >/dev/null 2>&1; then
@@ -59,6 +60,7 @@ export PORT
 export HTTPS_KEY_PATH
 export HTTPS_CERT_PATH
 export HTTPS_CA_PATH
+export PUBLIC_WS_URL
 
 PROTOCOL="http"
 WS_PROTOCOL="ws"
@@ -76,6 +78,7 @@ PROTOCOL=${PROTOCOL}
 WS_PROTOCOL=${WS_PROTOCOL}
 URL=${PROTOCOL}://localhost:${PORT}/
 ADMIN_URL=${PROTOCOL}://localhost:${PORT}/admin
+PUBLIC_WS_URL=${PUBLIC_WS_URL}
 EOF
 
 echo "Rocket Crash Platform starting on ${PROTOCOL}://0.0.0.0:${PORT}"

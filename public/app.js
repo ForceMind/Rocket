@@ -189,8 +189,7 @@ function connectEvents() {
 
   ui.connectionStatus.textContent = "-- ms";
   ui.connectionStatus.classList.remove("online");
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(`${protocol}//${location.host}/ws?playerId=${encodeURIComponent(session.playerId)}`);
+  const socket = new WebSocket(buildWsUrl(session.playerId));
   source = socket;
   socket.addEventListener("open", () => {
     if (source !== socket) return;
@@ -223,6 +222,22 @@ function connectEvents() {
     latencyInFlight = false;
     socket.close();
   });
+}
+
+function buildWsUrl(playerId) {
+  const configuredUrl = snapshot?.settings?.publicWsUrl || "";
+  const fallbackProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const fallbackUrl = `${fallbackProtocol}//${location.host}/ws`;
+  const url = new URL(configuredUrl || fallbackUrl, location.href);
+
+  if (url.protocol === "http:") {
+    url.protocol = "ws:";
+  } else if (url.protocol === "https:") {
+    url.protocol = "wss:";
+  }
+
+  url.searchParams.set("playerId", playerId);
+  return url.toString();
 }
 
 function handleRealtimeEvent(type, data) {

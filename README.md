@@ -90,6 +90,14 @@ sudo PUBLIC_HOST=rocket.example.com \
 
 如果使用 Cloudflare Tunnel，推荐不要给 Node 配 HTTPS 证书。让 Cloudflare 对外提供 HTTPS / WSS，Tunnel 到源站使用 `http://localhost:PORT` 即可。详细配置见 [部署文档](docs/DEPLOYMENT.md#11-cloudflare-tunnel)。
 
+玩家端默认会根据当前页面地址自动连接 WebSocket：`https://域名` 会连接 `wss://域名/ws`，不会写死服务器 IP 或端口。若需要显式指定 WebSocket 地址，可以部署时传：
+
+```bash
+sudo PUBLIC_HOST=rocket.example.com \
+  PUBLIC_WS_URL=wss://rocket.example.com/ws \
+  bash deploy-opencloudos.sh
+```
+
 默认端口范围：
 
 ```text

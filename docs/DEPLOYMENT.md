@@ -323,6 +323,23 @@ Origin
 
 也就是说，浏览器到 Cloudflare 是 HTTPS / WSS，Cloudflare Tunnel 到本机 Node 服务可以继续用 HTTP / WS。此时不要给 `deploy-opencloudos.sh` 传 `HTTPS_CERT_PATH` 和 `HTTPS_KEY_PATH`，否则 Node 源站会切换成 HTTPS，和 Tunnel 的 `http://localhost:PORT` 配置不匹配。
 
+玩家端默认 WebSocket 地址跟随当前页面：
+
+```text
+https://rocket.example.com  ->  wss://rocket.example.com/ws
+http://1.2.3.4:3000         ->  ws://1.2.3.4:3000/ws
+```
+
+正常情况下不需要配置 WebSocket 地址。如果需要强制指定公网 WSS 地址，可以部署时传：
+
+```bash
+sudo PUBLIC_HOST=rocket.example.com \
+  PUBLIC_WS_URL=wss://rocket.example.com/ws \
+  bash deploy-opencloudos.sh
+```
+
+服务端会通过 `settings.publicWsUrl` 下发给前端，前端优先使用这个地址。
+
 推荐 `cloudflared` ingress：
 
 ```yaml

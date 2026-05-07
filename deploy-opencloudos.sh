@@ -14,6 +14,7 @@ PUBLIC_HOST="${PUBLIC_HOST:-}"
 HTTPS_KEY_PATH="${HTTPS_KEY_PATH:-${SSL_KEY_PATH:-${TLS_KEY_PATH:-}}}"
 HTTPS_CERT_PATH="${HTTPS_CERT_PATH:-${SSL_CERT_PATH:-${TLS_CERT_PATH:-}}}"
 HTTPS_CA_PATH="${HTTPS_CA_PATH:-${SSL_CA_PATH:-${TLS_CA_PATH:-}}}"
+PUBLIC_WS_URL="${PUBLIC_WS_URL:-${WS_URL:-}}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -133,6 +134,7 @@ Environment=MAX_PORT=${MAX_PORT}
 Environment=HTTPS_KEY_PATH=${HTTPS_KEY_PATH}
 Environment=HTTPS_CERT_PATH=${HTTPS_CERT_PATH}
 Environment=HTTPS_CA_PATH=${HTTPS_CA_PATH}
+Environment=PUBLIC_WS_URL=${PUBLIC_WS_URL}
 ExecStart=${APP_DIR}/start-linux.sh
 Restart=always
 RestartSec=3
@@ -252,7 +254,11 @@ fi
 echo "Private IP: ${PRIVATE_IP}"
 echo "Player URL: ${PROTOCOL}://${DISPLAY_HOST}:${PORT}/"
 echo "Admin URL : ${PROTOCOL}://${DISPLAY_HOST}:${PORT}/admin"
-echo "WebSocket : ${WS_PROTOCOL}://${DISPLAY_HOST}:${PORT}/ws"
+if [[ -n "${PUBLIC_WS_URL:-}" ]]; then
+  echo "WebSocket : ${PUBLIC_WS_URL}"
+else
+  echo "WebSocket : ${WS_PROTOCOL}://${DISPLAY_HOST}:${PORT}/ws"
+fi
 echo "Admin auth: disabled"
 echo
 echo "Useful commands:"

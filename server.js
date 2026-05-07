@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HTTPS_KEY_PATH = process.env.HTTPS_KEY_PATH || process.env.SSL_KEY_PATH || process.env.TLS_KEY_PATH || "";
 const HTTPS_CERT_PATH = process.env.HTTPS_CERT_PATH || process.env.SSL_CERT_PATH || process.env.TLS_CERT_PATH || "";
 const HTTPS_CA_PATH = process.env.HTTPS_CA_PATH || process.env.SSL_CA_PATH || process.env.TLS_CA_PATH || "";
+const PUBLIC_WS_URL = process.env.PUBLIC_WS_URL || process.env.WS_URL || "";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
@@ -986,7 +987,8 @@ function publicSettings() {
     bettingDurationMs: db.settings.bettingDurationMs,
     roundPauseMs: db.settings.roundPauseMs,
     paused: db.settings.paused,
-    curveSpeedMs: CURVE_SPEED_MS
+    curveSpeedMs: CURVE_SPEED_MS,
+    publicWsUrl: PUBLIC_WS_URL
   };
 }
 
