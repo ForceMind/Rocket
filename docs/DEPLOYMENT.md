@@ -355,6 +355,21 @@ sudo PUBLIC_HOST=rocket.xincreates.com \
 
 脚本会自动生成 `PUBLIC_WS_URL=wss://rocket-api.xincreates.com/ws`。服务端会通过 `settings.publicWsUrl` 下发给前端，前端优先使用这个地址。
 
+如果直接运行：
+
+```bash
+sudo bash deploy-opencloudos.sh
+```
+
+脚本会在交互终端里询问：
+
+```text
+Player public host
+WebSocket public host or URL
+```
+
+按回车会保留默认行为：页面域名为空时自动识别公网 IP，WebSocket 为空时玩家端按当前页面域名连接 `/ws`。如果需要无人值守部署，可以继续通过环境变量传值，或设置 `ASK_DEPLOY_CONFIG=0` 跳过提问。
+
 推荐 `cloudflared` ingress：
 
 ```yaml

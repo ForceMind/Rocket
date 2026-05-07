@@ -20,6 +20,13 @@ PUBLIC_WS_SCHEME="${PUBLIC_WS_SCHEME:-wss}"
 PUBLIC_WS_PATH="${PUBLIC_WS_PATH:-/ws}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+trim_value() {
+  local value="$*"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
 build_public_ws_url() {
   local host="$1"
   local scheme="${2:-wss}"
@@ -41,13 +48,53 @@ build_public_ws_url() {
   fi
 }
 
-if [[ -z "$PUBLIC_WS_URL" && -n "$PUBLIC_WS_HOST" ]]; then
-  PUBLIC_WS_URL="$(build_public_ws_url "$PUBLIC_WS_HOST" "$PUBLIC_WS_SCHEME" "$PUBLIC_WS_PATH")"
-fi
+can_prompt_deploy_config() {
+  [[ "${ASK_DEPLOY_CONFIG:-1}" == "1" && -t 0 && -t 1 ]]
+}
+
+prompt_deploy_config() {
+  if ! can_prompt_deploy_config; then
+    return 0
+  fi
+
+  local input=""
+  echo
+  echo "Deployment configuration"
+  echo "Press Enter to keep defaults or values already provided by environment variables."
+
+  if [[ -z "$PUBLIC_HOST" ]]; then
+    read -r -p "Player public host, for example rocket.xincreates.com (blank = auto-detect public IP): " input
+    PUBLIC_HOST="$(trim_value "$input")"
+  else
+    echo "Player public host: ${PUBLIC_HOST}"
+  fi
+
+  if [[ -z "$PUBLIC_WS_URL" && -z "$PUBLIC_WS_HOST" ]]; then
+    read -r -p "WebSocket public host or URL, for example rocket-api.xincreates.com or wss://rocket-api.xincreates.com/ws (blank = same as player host): " input
+    input="$(trim_value "$input")"
+    if [[ -n "$input" ]]; then
+      if [[ "$input" =~ ^wss?:// ]]; then
+        PUBLIC_WS_URL="$input"
+      else
+        PUBLIC_WS_HOST="$input"
+      fi
+    fi
+  elif [[ -n "$PUBLIC_WS_URL" ]]; then
+    echo "WebSocket public URL: ${PUBLIC_WS_URL}"
+  else
+    echo "WebSocket public host: ${PUBLIC_WS_HOST}"
+  fi
+}
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy-opencloudos.sh" >&2
   exit 1
+fi
+
+prompt_deploy_config
+
+if [[ -z "$PUBLIC_WS_URL" && -n "$PUBLIC_WS_HOST" ]]; then
+  PUBLIC_WS_URL="$(build_public_ws_url "$PUBLIC_WS_HOST" "$PUBLIC_WS_SCHEME" "$PUBLIC_WS_PATH")"
 fi
 
 install_node_if_missing() {
