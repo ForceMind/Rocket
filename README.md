@@ -56,6 +56,14 @@ node server.js
 
 如果 3000 已被其他服务占用，本地手动启动需要自己换端口；Linux 脚本支持端口自增。
 
+启用服务端 HTTPS / WSS：
+
+```bash
+HTTPS_CERT_PATH=/path/fullchain.pem HTTPS_KEY_PATH=/path/privkey.pem node server.js
+```
+
+启用后玩家端地址会变为 `https://host:port/`，WebSocket 会自动使用 `wss://host:port/ws`。
+
 ## OpenCloudOS 部署
 
 在服务器项目目录执行：
@@ -69,6 +77,15 @@ sudo bash deploy-opencloudos.sh
 
 ```bash
 sudo PUBLIC_HOST=rocket.example.com bash deploy-opencloudos.sh
+```
+
+如果需要让 Node 服务本身直接提供 HTTPS / WSS：
+
+```bash
+sudo PUBLIC_HOST=rocket.example.com \
+  HTTPS_CERT_PATH=/opt/rocket-crash-platform/certs/fullchain.pem \
+  HTTPS_KEY_PATH=/opt/rocket-crash-platform/certs/privkey.pem \
+  bash deploy-opencloudos.sh
 ```
 
 默认端口范围：

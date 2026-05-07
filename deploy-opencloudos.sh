@@ -11,6 +11,9 @@ UPDATE_FROM_GIT="${UPDATE_FROM_GIT:-1}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 GIT_BRANCH="${GIT_BRANCH:-}"
 PUBLIC_HOST="${PUBLIC_HOST:-}"
+HTTPS_KEY_PATH="${HTTPS_KEY_PATH:-${SSL_KEY_PATH:-${TLS_KEY_PATH:-}}}"
+HTTPS_CERT_PATH="${HTTPS_CERT_PATH:-${SSL_CERT_PATH:-${TLS_CERT_PATH:-}}}"
+HTTPS_CA_PATH="${HTTPS_CA_PATH:-${SSL_CA_PATH:-${TLS_CA_PATH:-}}}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -127,6 +130,9 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=NODE_BIN=${NODE_BIN}
 Environment=BASE_PORT=${BASE_PORT}
 Environment=MAX_PORT=${MAX_PORT}
+Environment=HTTPS_KEY_PATH=${HTTPS_KEY_PATH}
+Environment=HTTPS_CERT_PATH=${HTTPS_CERT_PATH}
+Environment=HTTPS_CA_PATH=${HTTPS_CA_PATH}
 ExecStart=${APP_DIR}/start-linux.sh
 Restart=always
 RestartSec=3
@@ -155,7 +161,11 @@ if [[ -f "$RUNTIME_FILE" ]]; then
   source "$RUNTIME_FILE"
 else
   PORT="$BASE_PORT"
+  PROTOCOL="http"
+  WS_PROTOCOL="ws"
 fi
+PROTOCOL="${PROTOCOL:-http}"
+WS_PROTOCOL="${WS_PROTOCOL:-ws}"
 
 detect_public_ip() {
   local ip=""
@@ -240,8 +250,9 @@ if [[ -n "$PUBLIC_IP" ]]; then
   echo "Public host: ${PUBLIC_IP}"
 fi
 echo "Private IP: ${PRIVATE_IP}"
-echo "Player URL: http://${DISPLAY_HOST}:${PORT}/"
-echo "Admin URL : http://${DISPLAY_HOST}:${PORT}/admin"
+echo "Player URL: ${PROTOCOL}://${DISPLAY_HOST}:${PORT}/"
+echo "Admin URL : ${PROTOCOL}://${DISPLAY_HOST}:${PORT}/admin"
+echo "WebSocket : ${WS_PROTOCOL}://${DISPLAY_HOST}:${PORT}/ws"
 echo "Admin auth: disabled"
 echo
 echo "Useful commands:"

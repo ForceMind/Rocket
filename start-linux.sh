@@ -5,6 +5,9 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_PORT="${BASE_PORT:-${PORT:-3000}}"
 MAX_PORT="${MAX_PORT:-$((BASE_PORT + 50))}"
 NODE_BIN="${NODE_BIN:-}"
+HTTPS_KEY_PATH="${HTTPS_KEY_PATH:-${SSL_KEY_PATH:-${TLS_KEY_PATH:-}}}"
+HTTPS_CERT_PATH="${HTTPS_CERT_PATH:-${SSL_CERT_PATH:-${TLS_CERT_PATH:-}}}"
+HTTPS_CA_PATH="${HTTPS_CA_PATH:-${SSL_CA_PATH:-${TLS_CA_PATH:-}}}"
 
 if [[ -z "$NODE_BIN" ]]; then
   if command -v node >/dev/null 2>&1; then
@@ -53,15 +56,27 @@ choose_port() {
 
 PORT="$(choose_port)"
 export PORT
+export HTTPS_KEY_PATH
+export HTTPS_CERT_PATH
+export HTTPS_CA_PATH
+
+PROTOCOL="http"
+WS_PROTOCOL="ws"
+if [[ -n "$HTTPS_KEY_PATH" || -n "$HTTPS_CERT_PATH" ]]; then
+  PROTOCOL="https"
+  WS_PROTOCOL="wss"
+fi
 
 mkdir -p "$APP_DIR/data"
 cat > "$APP_DIR/data/runtime.env" <<EOF
 PORT=${PORT}
 BASE_PORT=${BASE_PORT}
 MAX_PORT=${MAX_PORT}
-URL=http://localhost:${PORT}/
-ADMIN_URL=http://localhost:${PORT}/admin
+PROTOCOL=${PROTOCOL}
+WS_PROTOCOL=${WS_PROTOCOL}
+URL=${PROTOCOL}://localhost:${PORT}/
+ADMIN_URL=${PROTOCOL}://localhost:${PORT}/admin
 EOF
 
-echo "Rocket Crash Platform starting on port ${PORT}"
+echo "Rocket Crash Platform starting on ${PROTOCOL}://0.0.0.0:${PORT}"
 exec "$NODE_BIN" "$APP_DIR/server.js"

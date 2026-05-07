@@ -1,10 +1,14 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
+const https = require("node:https");
 const path = require("node:path");
 const { URL } = require("node:url");
 
 const PORT = Number(process.env.PORT || 3000);
+const HTTPS_KEY_PATH = process.env.HTTPS_KEY_PATH || process.env.SSL_KEY_PATH || process.env.TLS_KEY_PATH || "";
+const HTTPS_CERT_PATH = process.env.HTTPS_CERT_PATH || process.env.SSL_CERT_PATH || process.env.TLS_CERT_PATH || "";
+const HTTPS_CA_PATH = process.env.HTTPS_CA_PATH || process.env.SSL_CA_PATH || process.env.TLS_CA_PATH || "";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
@@ -77,6 +81,33 @@ function randomChoice(items) {
 
 function newId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(5).toString("hex")}`;
+}
+
+function httpsOptionsFromEnv() {
+  if (!HTTPS_KEY_PATH && !HTTPS_CERT_PATH) {
+    return null;
+  }
+  if (!HTTPS_KEY_PATH || !HTTPS_CERT_PATH) {
+    throw new Error("HTTPS requires both HTTPS_KEY_PATH and HTTPS_CERT_PATH");
+  }
+  if (!fs.existsSync(HTTPS_KEY_PATH)) {
+    throw new Error(`HTTPS key file not found: ${HTTPS_KEY_PATH}`);
+  }
+  if (!fs.existsSync(HTTPS_CERT_PATH)) {
+    throw new Error(`HTTPS certificate file not found: ${HTTPS_CERT_PATH}`);
+  }
+
+  const options = {
+    key: fs.readFileSync(HTTPS_KEY_PATH),
+    cert: fs.readFileSync(HTTPS_CERT_PATH)
+  };
+  if (HTTPS_CA_PATH) {
+    if (!fs.existsSync(HTTPS_CA_PATH)) {
+      throw new Error(`HTTPS CA file not found: ${HTTPS_CA_PATH}`);
+    }
+    options.ca = fs.readFileSync(HTTPS_CA_PATH);
+  }
+  return options;
 }
 
 function sha256(value) {
@@ -1337,8 +1368,14 @@ function serveStatic(req, res, url) {
   fs.createReadStream(filePath).pipe(res);
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+const httpsOptions = httpsOptionsFromEnv();
+const protocol = httpsOptions ? "https" : "http";
+const wsProtocol = httpsOptions ? "wss" : "ws";
+
+const server = (httpsOptions ? https.createServer(httpsOptions) : http.createServer());
+
+server.on("request", async (req, res) => {
+  const url = new URL(req.url, `${protocol}://${req.headers.host || "localhost"}`);
   try {
     if (req.method === "GET" && url.pathname === "/events") {
       return sendJson(res, 410, { error: "SSE is disabled. Use /ws WebSocket events." });
@@ -1370,7 +1407,8 @@ setInterval(tick, 50);
 createRound();
 
 server.listen(PORT, () => {
-  console.log(`Rocket Crash Platform running at http://localhost:${PORT}`);
-  console.log(`Admin console: http://localhost:${PORT}/admin`);
+  console.log(`Rocket Crash Platform running at ${protocol}://localhost:${PORT}`);
+  console.log(`Admin console: ${protocol}://localhost:${PORT}/admin`);
+  console.log(`WebSocket endpoint: ${wsProtocol}://localhost:${PORT}/ws`);
   console.log("Admin authentication is disabled for MVP/local operation.");
 });

@@ -8,6 +8,12 @@
 http://localhost:3000
 ```
 
+如果配置 `HTTPS_CERT_PATH` 和 `HTTPS_KEY_PATH` 启动服务，基础地址变为：
+
+```text
+https://localhost:3000
+```
+
 数据格式：
 
 - HTTP 请求体使用 JSON。
@@ -324,6 +330,12 @@ POST /api/admin/pause
 
 ```text
 ws://localhost:3000/ws?playerId=player_...
+```
+
+HTTPS 页面会自动使用：
+
+```text
+wss://localhost:3000/ws?playerId=player_...
 ```
 
 所有服务端消息格式：

@@ -40,6 +40,20 @@ $env:PORT="3001"
 node server.js
 ```
 
+直接启用 HTTPS / WSS：
+
+```powershell
+$env:HTTPS_CERT_PATH="C:\certs\fullchain.pem"
+$env:HTTPS_KEY_PATH="C:\certs\privkey.pem"
+node server.js
+```
+
+启用后访问：
+
+- 玩家端：https://localhost:3000/
+- 后台端：https://localhost:3000/admin
+- WebSocket：wss://localhost:3000/ws
+
 访问：
 
 - 玩家端：http://localhost:3000/
@@ -103,7 +117,60 @@ sudo PUBLIC_HOST=1.2.3.4 bash deploy-opencloudos.sh
 sudo PUBLIC_HOST=rocket.example.com bash deploy-opencloudos.sh
 ```
 
-## 5. 端口自增规则
+## 5. HTTPS / WSS
+
+服务端支持直接使用 HTTPS 证书启动。只要同时提供证书和私钥路径，Node 服务会从 HTTP 切换为 HTTPS，同一个 `/ws` 端点会自动支持 WSS。
+
+部署时启用：
+
+```bash
+sudo PUBLIC_HOST=rocket.example.com \
+  HTTPS_CERT_PATH=/opt/rocket-crash-platform/certs/fullchain.pem \
+  HTTPS_KEY_PATH=/opt/rocket-crash-platform/certs/privkey.pem \
+  bash deploy-opencloudos.sh
+```
+
+可选 CA 链：
+
+```bash
+sudo PUBLIC_HOST=rocket.example.com \
+  HTTPS_CERT_PATH=/opt/rocket-crash-platform/certs/fullchain.pem \
+  HTTPS_KEY_PATH=/opt/rocket-crash-platform/certs/privkey.pem \
+  HTTPS_CA_PATH=/opt/rocket-crash-platform/certs/ca.pem \
+  bash deploy-opencloudos.sh
+```
+
+兼容环境变量：
+
+```text
+HTTPS_CERT_PATH / SSL_CERT_PATH / TLS_CERT_PATH
+HTTPS_KEY_PATH  / SSL_KEY_PATH  / TLS_KEY_PATH
+HTTPS_CA_PATH   / SSL_CA_PATH   / TLS_CA_PATH
+```
+
+证书权限要求：
+
+- systemd 默认使用 `rocket` 用户运行服务。
+- 私钥文件必须能被 `rocket` 用户读取。
+- 如果证书放在 `/opt/rocket-crash-platform/certs/`，可以设置：
+
+```bash
+sudo mkdir -p /opt/rocket-crash-platform/certs
+sudo cp fullchain.pem privkey.pem /opt/rocket-crash-platform/certs/
+sudo chown -R root:rocket /opt/rocket-crash-platform/certs
+sudo chmod 750 /opt/rocket-crash-platform/certs
+sudo chmod 640 /opt/rocket-crash-platform/certs/*.pem
+```
+
+部署完成后输出会按协议打印：
+
+```text
+Player URL: https://rocket.example.com:3000/
+Admin URL : https://rocket.example.com:3000/admin
+WebSocket : wss://rocket.example.com:3000/ws
+```
+
+## 6. 端口自增规则
 
 默认：
 
@@ -138,7 +205,7 @@ sudo cat /opt/rocket-crash-platform/data/runtime.env
 sudo BASE_PORT=3100 MAX_PORT=3150 bash deploy-opencloudos.sh
 ```
 
-## 6. Git 自动更新
+## 7. Git 自动更新
 
 默认部署前会尝试从当前 Git 分支拉取最新代码：
 
@@ -164,7 +231,7 @@ sudo GIT_BRANCH=main bash deploy-opencloudos.sh
 - 如果服务器本地有未提交改动，Git 更新可能失败。
 - 失败时请先处理服务器本地改动，再重新部署。
 
-## 7. systemd 常用命令
+## 8. systemd 常用命令
 
 查看状态：
 
@@ -196,7 +263,7 @@ sudo systemctl stop rocket-crash
 sudo systemctl enable rocket-crash
 ```
 
-## 8. 数据目录
+## 9. 数据目录
 
 本地开发：
 
@@ -218,7 +285,7 @@ OpenCloudOS 部署：
 - `runtime.env` 保存当前选中的端口。
 - 重新部署会保留部署目录内的数据文件。
 
-## 9. 反向代理建议
+## 10. 反向代理建议
 
 生产或公网访问建议放到 Nginx / OpenResty 后面：
 
@@ -236,7 +303,7 @@ proxy_set_header Upgrade $http_upgrade;
 proxy_set_header Connection "upgrade";
 ```
 
-## 10. 故障排查
+## 11. 故障排查
 
 ### 10.1 部署后不是 3001
 

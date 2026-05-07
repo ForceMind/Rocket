@@ -13,9 +13,9 @@ Browser
         | WebSocket /ws
         v
 server.js
-  HTTP static server
+  HTTP or HTTPS static server
   JSON API router
-  WebSocket event broadcaster
+  WebSocket or WSS event broadcaster
   round state machine
   local JSON persistence
         |
@@ -25,7 +25,7 @@ data/db.json
 
 ## 2. 运行时模块
 
-- `server.js`：HTTP 服务、WebSocket 服务、游戏状态机、结算、后台接口。
+- `server.js`：HTTP / HTTPS 服务、WebSocket / WSS 服务、游戏状态机、结算、后台接口。
 - `public/app.js`：玩家端状态渲染、WebSocket 事件处理、本地倍率计算、下注和提现请求。
 - `public/admin.js`：后台轮询、参数保存、玩家管理、强制爆炸和暂停恢复。
 - `public/styles.css`：玩家端和后台端样式。
@@ -278,6 +278,8 @@ for each bot:
 ```text
 /ws?playerId=...
 ```
+
+如果页面通过 HTTPS 打开，浏览器会自动连接 `wss://host/ws`；如果页面通过 HTTP 打开，则连接 `ws://host/ws`。服务端配置证书后可以直接提供 HTTPS 和 WSS。
 
 事件驱动：
 
