@@ -9,48 +9,11 @@ const PORT = Number(process.env.PORT || 3000);
 const HTTPS_KEY_PATH = process.env.HTTPS_KEY_PATH || process.env.SSL_KEY_PATH || process.env.TLS_KEY_PATH || "";
 const HTTPS_CERT_PATH = process.env.HTTPS_CERT_PATH || process.env.SSL_CERT_PATH || process.env.TLS_CERT_PATH || "";
 const HTTPS_CA_PATH = process.env.HTTPS_CA_PATH || process.env.SSL_CA_PATH || process.env.TLS_CA_PATH || "";
-const PUBLIC_WS_URL = resolvePublicWsUrl();
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const CURVE_SPEED_MS = 6500;
-
-function normalizePublicWsUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    if (url.protocol === "http:") {
-      url.protocol = "ws:";
-    } else if (url.protocol === "https:") {
-      url.protocol = "wss:";
-    }
-    return url.toString();
-  } catch {
-    return raw;
-  }
-}
-
-function resolvePublicWsUrl() {
-  const explicitUrl = process.env.PUBLIC_WS_URL || process.env.WS_URL || "";
-  if (explicitUrl.trim()) {
-    return normalizePublicWsUrl(explicitUrl);
-  }
-
-  const host = String(process.env.PUBLIC_WS_HOST || "").trim();
-  if (!host) return "";
-
-  if (/^wss?:\/\//i.test(host)) {
-    return normalizePublicWsUrl(host);
-  }
-
-  const scheme = String(process.env.PUBLIC_WS_SCHEME || "wss").replace(/:$/, "") || "wss";
-  const configuredPath = String(process.env.PUBLIC_WS_PATH || "/ws");
-  const wsPath = configuredPath.startsWith("/") ? configuredPath : `/${configuredPath}`;
-  const url = host.includes("/") ? `${scheme}://${host}` : `${scheme}://${host}${wsPath}`;
-  return normalizePublicWsUrl(url);
-}
 
 const DEFAULT_SETTINGS = {
   bettingDurationMs: 7000,
@@ -1024,7 +987,7 @@ function publicSettings() {
     roundPauseMs: db.settings.roundPauseMs,
     paused: db.settings.paused,
     curveSpeedMs: CURVE_SPEED_MS,
-    publicWsUrl: PUBLIC_WS_URL
+    publicWsUrl: ""
   };
 }
 

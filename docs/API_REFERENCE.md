@@ -62,7 +62,7 @@ GET /api/state?playerId=...
 
 - `playerId` 可选。
 - 有 `playerId` 时返回当前玩家信息和本人历史。
-- `settings.publicWsUrl` 可能为空。为空时玩家端按当前页面地址自动生成 WebSocket 地址；有值时优先使用该地址。
+- 玩家端 WebSocket 公网地址优先来自 `public/runtime-config.js` 中的 `window.ROCKET_CONFIG.publicWsUrl`。该值为空时，玩家端按当前页面地址自动生成 WebSocket 地址。
 
 ### 3.2 Ping
 

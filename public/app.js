@@ -34,6 +34,8 @@ const ui = {
   canvas: $("#rocketCanvas")
 };
 
+const runtimeConfig = window.ROCKET_CONFIG || {};
+
 let session = null;
 let snapshot = null;
 let source = null;
@@ -225,7 +227,7 @@ function connectEvents() {
 }
 
 function buildWsUrl(playerId) {
-  const configuredUrl = snapshot?.settings?.publicWsUrl || "";
+  const configuredUrl = runtimeConfig.publicWsUrl || snapshot?.settings?.publicWsUrl || "";
   const fallbackProtocol = location.protocol === "https:" ? "wss:" : "ws:";
   const fallbackUrl = `${fallbackProtocol}//${location.host}/ws`;
   const url = new URL(configuredUrl || fallbackUrl, location.href);

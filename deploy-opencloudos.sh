@@ -61,16 +61,17 @@ prompt_deploy_config() {
   echo
   echo "Deployment configuration"
   echo "Press Enter to keep defaults or values already provided by environment variables."
+  echo "These public hosts are written only to the browser runtime config, not to the Node listener."
 
   if [[ -z "$PUBLIC_HOST" ]]; then
-    read -r -p "Player public host, for example rocket.xincreates.com (blank = auto-detect public IP): " input
+    read -r -p "Frontend public host, for example rocket.xincreates.com (blank = auto-detect public IP): " input
     PUBLIC_HOST="$(trim_value "$input")"
   else
-    echo "Player public host: ${PUBLIC_HOST}"
+    echo "Frontend public host: ${PUBLIC_HOST}"
   fi
 
   if [[ -z "$PUBLIC_WS_URL" && -z "$PUBLIC_WS_HOST" ]]; then
-    read -r -p "WebSocket public host or URL, for example rocket-api.xincreates.com or wss://rocket-api.xincreates.com/ws (blank = same as player host): " input
+    read -r -p "Frontend WebSocket host or URL, for example rocket-api.xincreates.com or wss://rocket-api.xincreates.com/ws (blank = same as frontend host): " input
     input="$(trim_value "$input")"
     if [[ -n "$input" ]]; then
       if [[ "$input" =~ ^wss?:// ]]; then
@@ -84,6 +85,20 @@ prompt_deploy_config() {
   else
     echo "WebSocket public host: ${PUBLIC_WS_HOST}"
   fi
+}
+
+json_string() {
+  "$NODE_BIN" -e 'process.stdout.write(JSON.stringify(process.argv[1] || ""))' "$1"
+}
+
+write_frontend_runtime_config() {
+  local ws_url_json
+  mkdir -p "$APP_DIR/public"
+  ws_url_json="$(json_string "${PUBLIC_WS_URL:-}")"
+  cat > "$APP_DIR/public/runtime-config.js" <<EOF
+window.ROCKET_CONFIG = window.ROCKET_CONFIG || {};
+window.ROCKET_CONFIG.publicWsUrl = ${ws_url_json};
+EOF
 }
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -188,6 +203,7 @@ fi
 
 mkdir -p "$APP_DIR/data"
 chmod +x "$APP_DIR/start-linux.sh"
+write_frontend_runtime_config
 chown -R "$RUN_USER:$RUN_USER" "$APP_DIR"
 
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
@@ -209,10 +225,6 @@ Environment=MAX_PORT=${MAX_PORT}
 Environment=HTTPS_KEY_PATH=${HTTPS_KEY_PATH}
 Environment=HTTPS_CERT_PATH=${HTTPS_CERT_PATH}
 Environment=HTTPS_CA_PATH=${HTTPS_CA_PATH}
-Environment=PUBLIC_WS_URL=${PUBLIC_WS_URL}
-Environment=PUBLIC_WS_HOST=${PUBLIC_WS_HOST}
-Environment=PUBLIC_WS_SCHEME=${PUBLIC_WS_SCHEME}
-Environment=PUBLIC_WS_PATH=${PUBLIC_WS_PATH}
 ExecStart=${APP_DIR}/start-linux.sh
 Restart=always
 RestartSec=3
@@ -319,6 +331,19 @@ if [[ -z "$DISPLAY_HOST" ]]; then
   DISPLAY_HOST="$PRIVATE_IP"
 fi
 
+if [[ -n "$PUBLIC_HOST" ]]; then
+  if [[ "$PUBLIC_HOST" =~ ^https?:// ]]; then
+    PLAYER_URL="${PUBLIC_HOST%/}/"
+  elif [[ "$PUBLIC_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    PLAYER_URL="${PROTOCOL}://${PUBLIC_HOST}:${PORT}/"
+  else
+    PLAYER_URL="https://${PUBLIC_HOST}/"
+  fi
+else
+  PLAYER_URL="${PROTOCOL}://${DISPLAY_HOST}:${PORT}/"
+fi
+ADMIN_URL="${PLAYER_URL%/}/admin"
+
 echo
 echo "Deployment complete."
 echo "Service: ${SERVICE_NAME}"
@@ -330,8 +355,8 @@ if [[ -n "$PUBLIC_IP" ]]; then
   echo "Public host: ${PUBLIC_IP}"
 fi
 echo "Private IP: ${PRIVATE_IP}"
-echo "Player URL: ${PROTOCOL}://${DISPLAY_HOST}:${PORT}/"
-echo "Admin URL : ${PROTOCOL}://${DISPLAY_HOST}:${PORT}/admin"
+echo "Player URL: ${PLAYER_URL}"
+echo "Admin URL : ${ADMIN_URL}"
 if [[ -n "${PUBLIC_WS_URL:-}" ]]; then
   echo "WebSocket : ${PUBLIC_WS_URL}"
 else
