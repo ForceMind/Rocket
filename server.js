@@ -26,6 +26,8 @@ const DEFAULT_SETTINGS = {
   botsEnabled: true,
   botMinCount: 14,
   botMaxCount: 34,
+  botBetIntervalMinMs: 100,
+  botBetIntervalMaxMs: 230,
   botMinBetCents: 100,
   botMaxBetCents: 25000,
   botOnlyHighFlightBps: 800,
@@ -170,6 +172,12 @@ function publicPlayer(player) {
   };
 }
 
+function maskedName(name) {
+  const source = Array.from(String(name || "Player").trim());
+  const prefix = source.slice(0, 2).join("") || "P";
+  return `${prefix}**`;
+}
+
 function privateAdminPlayer(player) {
   return {
     ...publicPlayer(player),
@@ -260,8 +268,11 @@ function crashPointFor(serverSeed, nonce, settings = db.settings) {
 function botBetAmountCents() {
   const min = Math.max(100, db.settings.botMinBetCents || db.settings.minBetCents);
   const max = Math.max(min, db.settings.botMaxBetCents || db.settings.maxBetCents);
-  const amount = randomInt(Math.ceil(min / 100), Math.floor(max / 100)) * 100;
-  return clamp(amount, db.settings.minBetCents, db.settings.maxBetCents);
+  const tiers = db.settings.betTiersCents.filter((cents) => cents >= min && cents <= max);
+  if (tiers.length > 0) {
+    return randomChoice(tiers);
+  }
+  return randomChoice(db.settings.betTiersCents);
 }
 
 function botCashoutMultiplier() {
@@ -347,20 +358,33 @@ function createBotPlan(createdAt) {
   const minCount = Math.max(0, Number(db.settings.botMinCount || 0));
   const maxCount = Math.max(minCount, Number(db.settings.botMaxCount || minCount));
   const count = randomInt(minCount, maxCount);
-  const latestPlaceMs = Math.max(800, db.settings.bettingDurationMs - 450);
+  const firstPlaceMs = 350;
+  const latestPlaceMs = Math.max(firstPlaceMs, db.settings.bettingDurationMs - 1100);
+  const intervalMinMs = clamp(Number(db.settings.botBetIntervalMinMs || 100), 50, 5000);
+  const intervalMaxMs = Math.max(intervalMinMs, clamp(Number(db.settings.botBetIntervalMaxMs || 230), 50, 5000));
+  const maxSchedulableCount = Math.floor((latestPlaceMs - firstPlaceMs) / intervalMinMs) + 1;
+  const scheduledCount = Math.min(count, Math.max(0, maxSchedulableCount));
+  const plan = [];
+  let placeOffsetMs = firstPlaceMs;
 
-  return Array.from({ length: count }, (_, index) => {
+  for (let index = 0; index < scheduledCount; index += 1) {
     const name = `${randomChoice(BOT_NAMES)}${randomInt(10, 99)}`;
-    return {
+    plan.push({
       id: newId("botplan"),
       name,
-      placeAt: createdAt + randomInt(250, latestPlaceMs),
+      placeAt: createdAt + placeOffsetMs,
       amountCents: botBetAmountCents(),
       autoCashout: botCashoutMultiplier(),
       placed: false,
       index
-    };
-  }).sort((a, b) => a.placeAt - b.placeAt);
+    });
+    const remaining = scheduledCount - index - 1;
+    const latestNextInterval = latestPlaceMs - placeOffsetMs - remaining * intervalMinMs;
+    const maxNextInterval = Math.max(intervalMinMs, Math.min(intervalMaxMs, latestNextInterval));
+    placeOffsetMs += randomInt(intervalMinMs, maxNextInterval);
+  }
+
+  return plan;
 }
 
 function placeDueBotBets(timestamp) {
@@ -386,6 +410,7 @@ function placeDueBotBets(timestamp) {
     });
     broadcastEvent("bet_placed", {
       roundId: currentRound.id,
+      round: publicRound(),
       bet: publicBet(currentRound.bets[currentRound.bets.length - 1])
     });
     changed = true;
@@ -512,6 +537,11 @@ function finishRound() {
     history: db.rounds.slice(0, 24),
     settings: publicSettings()
   });
+  for (const client of clients) {
+    if (client.playerId) {
+      wsSend(client, "my_history", { myHistory: playerHistory(client.playerId) });
+    }
+  }
 }
 
 function processAutoCashouts(currentMultiplier) {
@@ -559,6 +589,7 @@ function emitCashout(bet) {
   const player = db.players[bet.playerId];
   broadcastEvent("cashout", {
     roundId: bet.roundId,
+    round: publicRound(),
     bet: publicBet(bet)
   });
   if (player) {
@@ -575,7 +606,6 @@ function tick() {
   }
 
   if (currentRound.phase === "betting" && timestamp >= currentRound.bettingEndsAt) {
-    placeDueBotBets(timestamp);
     startFlying();
   } else if (currentRound.phase === "betting") {
     const changed = placeDueBotBets(timestamp);
@@ -608,6 +638,7 @@ function publicBet(bet) {
     id: bet.id,
     playerId: bet.playerId,
     username: bet.username,
+    displayName: maskedName(bet.username, bet.playerId || bet.id),
     isBot: Boolean(bet.isBot),
     amount: centsToAmount(bet.amountCents),
     autoCashout: bet.autoCashout,
@@ -661,8 +692,36 @@ function publicSnapshot(playerId) {
     settings: publicSettings(),
     player: playerId && db.players[playerId] ? publicPlayer(db.players[playerId]) : null,
     round: publicRound(),
-    history: db.rounds.slice(0, 24)
+    history: db.rounds.slice(0, 24),
+    myHistory: playerId ? playerHistory(playerId) : []
   };
+}
+
+function playerHistory(playerId) {
+  const items = [];
+  if (currentRound?.bets) {
+    const liveBet = currentRound.bets.find((bet) => bet.playerId === playerId);
+    if (liveBet) {
+      items.push({
+        roundId: currentRound.id,
+        crashedAt: currentRound.crashedAt ? new Date(currentRound.crashedAt).toISOString() : null,
+        crashMultiplier: currentRound.phase === "crashed" ? currentRound.crashMultiplier : null,
+        bet: publicBet(liveBet)
+      });
+    }
+  }
+  for (const round of db.rounds) {
+    const bet = Array.isArray(round.bets) ? round.bets.find((item) => item.playerId === playerId) : null;
+    if (!bet) continue;
+    items.push({
+      roundId: round.id,
+      crashedAt: round.crashedAt,
+      crashMultiplier: round.crashMultiplier,
+      bet
+    });
+    if (items.length >= 30) break;
+  }
+  return items;
 }
 
 function roundMoneyTotals(round) {
@@ -823,6 +882,45 @@ function wsFrame(payload) {
   return Buffer.concat([header, data]);
 }
 
+function readWsFrame(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 2) return null;
+  const opcode = buffer[0] & 0x0f;
+  const masked = (buffer[1] & 0x80) === 0x80;
+  let length = buffer[1] & 0x7f;
+  let offset = 2;
+
+  if (length === 126) {
+    if (buffer.length < offset + 2) return null;
+    length = buffer.readUInt16BE(offset);
+    offset += 2;
+  } else if (length === 127) {
+    if (buffer.length < offset + 8) return null;
+    const bigLength = buffer.readBigUInt64BE(offset);
+    if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    length = Number(bigLength);
+    offset += 8;
+  }
+
+  let mask = null;
+  if (masked) {
+    if (buffer.length < offset + 4) return null;
+    mask = buffer.subarray(offset, offset + 4);
+    offset += 4;
+  }
+
+  if (buffer.length < offset + length) return null;
+  const payload = Buffer.from(buffer.subarray(offset, offset + length));
+  if (mask) {
+    for (let index = 0; index < payload.length; index += 1) {
+      payload[index] ^= mask[index % 4];
+    }
+  }
+  return {
+    opcode,
+    text: opcode === 0x1 ? payload.toString("utf8") : ""
+  };
+}
+
 function wsSend(client, type, data = {}) {
   if (!client || client.socket.destroyed) {
     clients.delete(client);
@@ -896,9 +994,21 @@ function handleWsUpgrade(req, socket) {
   wsSend(client, "snapshot", publicSnapshot(client.playerId));
 
   socket.on("data", (buffer) => {
-    if ((buffer[0] & 0x0f) === 0x8) {
+    const frame = readWsFrame(buffer);
+    if (!frame) return;
+    if (frame.opcode === 0x8) {
       clients.delete(client);
       socket.end();
+      return;
+    }
+    if (frame.opcode !== 0x1 || !frame.text) return;
+    try {
+      const message = JSON.parse(frame.text);
+      if (message.type === "ping") {
+        wsSend(client, "pong", { clientTime: message.clientTime || Date.now() });
+      }
+    } catch {
+      // Ignore malformed client frames. The server only expects lightweight ping messages.
     }
   });
   socket.on("close", () => clients.delete(client));
@@ -938,6 +1048,10 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, publicSnapshot(url.searchParams.get("playerId")));
   }
 
+  if (route === "GET /api/ping") {
+    return sendJson(res, 200, { now: Date.now() });
+  }
+
   if (route === "POST /api/player/login") {
     const body = await readJson(req);
     const player = getOrCreatePlayer(body.username);
@@ -958,6 +1072,9 @@ async function handleApi(req, res, url) {
     }
     if (amountCents > db.settings.maxBetCents) {
       throw httpError(400, `Maximum bet is ${centsToAmount(db.settings.maxBetCents)}`);
+    }
+    if (!db.settings.betTiersCents.includes(amountCents)) {
+      throw httpError(400, "Bet amount must match one of the chip tiers");
     }
     if (amountCents > player.balanceCents) {
       throw httpError(400, "Insufficient balance");
@@ -994,7 +1111,7 @@ async function handleApi(req, res, url) {
     applyPrizePoolCap("human-bet");
     audit("bet.placed", { playerId: player.id, roundId: currentRound.id, amountCents });
     saveDb();
-    broadcastEvent("bet_placed", { roundId: currentRound.id, bet: publicBet(bet) });
+    broadcastEvent("bet_placed", { roundId: currentRound.id, round: publicRound(), bet: publicBet(bet) });
     sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
     return sendJson(res, 200, { bet: publicBet(bet), player: publicPlayer(player), state: publicSnapshot(player.id) });
   }
@@ -1053,6 +1170,8 @@ async function handleApi(req, res, url) {
       maxCrashMultiplier: [2, 1000],
       botMinCount: [0, 80],
       botMaxCount: [0, 120],
+      botBetIntervalMinMs: [50, 5000],
+      botBetIntervalMaxMs: [50, 5000],
       botOnlyHighFlightBps: [0, 10000],
       botOnlyHighFlightMin: [2, 1000],
       botOnlyHighFlightMax: [2, 1000]
@@ -1105,6 +1224,9 @@ async function handleApi(req, res, url) {
     }
     if (db.settings.botMinCount > db.settings.botMaxCount) {
       throw httpError(400, "机器人最小数量不能大于最大数量");
+    }
+    if (db.settings.botBetIntervalMinMs > db.settings.botBetIntervalMaxMs) {
+      throw httpError(400, "机器人下注最小间隔不能大于最大间隔");
     }
     if (db.settings.botOnlyHighFlightMin > db.settings.botOnlyHighFlightMax) {
       throw httpError(400, "纯机器人高飞最小倍率不能大于最大倍率");
@@ -1205,9 +1327,12 @@ function serveStatic(req, res, url) {
     return;
   }
   const ext = path.extname(filePath).toLowerCase();
+  const cacheControl = [".html", ".js", ".css"].includes(ext)
+    ? "no-store"
+    : "public, max-age=3600";
   res.writeHead(200, {
     "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-    "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=3600"
+    "Cache-Control": cacheControl
   });
   fs.createReadStream(filePath).pipe(res);
 }
