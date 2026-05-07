@@ -10,6 +10,7 @@ OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
 UPDATE_FROM_GIT="${UPDATE_FROM_GIT:-1}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 GIT_BRANCH="${GIT_BRANCH:-}"
+PUBLIC_HOST="${PUBLIC_HOST:-}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -156,9 +157,76 @@ else
   PORT="$BASE_PORT"
 fi
 
-SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-if [[ -z "$SERVER_IP" ]]; then
-  SERVER_IP="127.0.0.1"
+detect_public_ip() {
+  local ip=""
+  local endpoints=(
+    "https://api.ipify.org"
+    "https://ifconfig.me/ip"
+    "https://icanhazip.com"
+  )
+
+  if command -v curl >/dev/null 2>&1; then
+    for endpoint in "${endpoints[@]}"; do
+      ip="$(curl -fsS --max-time 3 "$endpoint" 2>/dev/null | tr -d '[:space:]' || true)"
+      if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "$ip"
+        return 0
+      fi
+    done
+  fi
+
+  if [[ -n "${NODE_BIN:-}" ]]; then
+    ip="$("$NODE_BIN" - "${endpoints[@]}" <<'NODE' 2>/dev/null || true
+const https = require("node:https");
+const endpoints = process.argv.slice(2);
+const ipPattern = /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/;
+
+function fetchText(url) {
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 3000 }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => resolve(body.trim()));
+    });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(""));
+  });
+}
+
+(async () => {
+  for (const endpoint of endpoints) {
+    const value = await fetchText(endpoint);
+    if (ipPattern.test(value)) {
+      console.log(value);
+      return;
+    }
+  }
+})();
+NODE
+)"
+    ip="$(echo "$ip" | tr -d '[:space:]')"
+    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+PUBLIC_IP="$PUBLIC_HOST"
+if [[ -z "$PUBLIC_IP" ]]; then
+  PUBLIC_IP="$(detect_public_ip || true)"
+fi
+PRIVATE_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -z "$PRIVATE_IP" ]]; then
+  PRIVATE_IP="127.0.0.1"
+fi
+
+DISPLAY_HOST="$PUBLIC_IP"
+if [[ -z "$DISPLAY_HOST" ]]; then
+  DISPLAY_HOST="$PRIVATE_IP"
 fi
 
 echo
@@ -167,8 +235,13 @@ echo "Service: ${SERVICE_NAME}"
 echo "App dir: ${APP_DIR}"
 echo "Port range: ${BASE_PORT}-${MAX_PORT}"
 echo "Selected port: ${PORT}"
-echo "Player URL: http://${SERVER_IP}:${PORT}/"
-echo "Admin URL : http://${SERVER_IP}:${PORT}/admin"
+echo "Runtime file: ${APP_DIR}/data/runtime.env"
+if [[ -n "$PUBLIC_IP" ]]; then
+  echo "Public host: ${PUBLIC_IP}"
+fi
+echo "Private IP: ${PRIVATE_IP}"
+echo "Player URL: http://${DISPLAY_HOST}:${PORT}/"
+echo "Admin URL : http://${DISPLAY_HOST}:${PORT}/admin"
 echo "Admin auth: disabled"
 echo
 echo "Useful commands:"

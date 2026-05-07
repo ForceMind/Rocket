@@ -1,406 +1,128 @@
 # Rocket Crash Platform
 
-这是一个完整的演示版 Rocket / Crash 多人实时下注游戏，包含玩家端、后台管理、实时倍率推送、下注/提现/结算、积分余额、回合历史和可验证公平基础信息。
+Rocket Crash Platform 是一个本地开发版 Rocket / Crash 多人实时下注演示项目，包含玩家端、后台管理、机器人、奖池、爆点算法、WebSocket 事件推送和 OpenCloudOS 部署脚本。
 
-默认实现是积分币/演示币版本，不包含真实资金、支付通道或合规风控。真实资金上线前需要补充 KYC、AML、地区合规、支付审计、风控、限额、异常监控和独立安全审计。
+当前版本是积分币 / 演示币系统，不包含真实资金、支付通道、KYC、AML、地区合规、风控审核或后台权限系统。真实资金上线前必须补齐合规、审计、安全和风控能力。
 
-## 功能
+## 文档目录
 
-- 玩家端：登录、余额、下注、可选自动提现、手动提现、实时倍率、下注列表、历史回合。
-- 后台端：本地免登录、运营指标、玩家余额调整、游戏参数、暂停/恢复、强制爆炸、回合记录。
-- 机器人：每局自动生成机器人玩家，按后台配置的下注间隔分批下注，并按各自自动提现倍率跳下。机器人金额不计入平台盈亏和回合金额，只记录人数。
-- 奖池：真实玩家下注进入奖池，提现返还从奖池扣除；真实玩家局的最大爆点会受奖池承受能力限制。
-- 下注档位：后台可配置前台筹码档位，例如 `10,50,100,500`。
-- 玩家端名单：显示匿名名，不展示真实昵称；下注金额必须匹配后台筹码档位。
-- 实时通信：使用 WebSocket 事件推送，无需外部依赖；飞行倍率由前端本地计算，服务端只做权威结算。
-- 持久化：本地 JSON 文件 `data/db.json`，服务启动时自动创建。
-- 公平性：每局提前公开 `serverSeedHash`，结束后公开 `serverSeed` 和 HMAC，便于复算爆炸点。
+- [产品文档](docs/PRODUCT_SPEC.md)：产品定位、用户角色、页面功能、流程、需求范围和验收标准。
+- [技术设计](docs/TECHNICAL_DESIGN.md)：系统架构、回合状态机、爆点算法、飞行公式、奖池规则和机器人调度。
+- [接口文档](docs/API_REFERENCE.md)：HTTP API、WebSocket 事件、请求响应和错误口径。
+- [后台运营指南](docs/OPERATIONS_GUIDE.md)：后台指标、参数说明、机器人、奖池、玩家管理和常见问题。
+- [部署文档](docs/DEPLOYMENT.md)：本地启动、Linux 启动、OpenCloudOS systemd 部署和端口自增。
 
-## 启动
+## 当前能力
 
-在项目根目录双击：
+- 玩家端：英文界面、登录、余额、下注、手动 Cash Out、可选 Auto Cashout、本人下注历史、爆点历史、实时玩家列表。
+- 直播间布局：玩家列表在左侧，火箭画面在中间，下注区在底部，目标适配 750 x 750 画面。
+- 后台端：本地 MVP 免密码，支持运营指标、当前回合、参数配置、玩家余额调整、强制爆炸、暂停恢复和回合记录。
+- 机器人：按后台配置的数量和下注间隔陆续下注，按自动提现倍率实时跳出。机器人金额不计入平台盈亏和回合金额，只统计人数。
+- 奖池：真实玩家下注进入奖池，真实玩家提现从奖池扣除；真实玩家局的最大爆点受奖池承受能力限制。
+- 实时通信：玩家端使用 WebSocket 事件推送。飞行中不持续推送倍率，前端根据 `launchAt` 本地计算显示，服务端仍负责权威结算。
+- 公平性：每局开始公开 `serverSeedHash`，爆炸后公开 `serverSeed` 和 HMAC，便于复算随机爆点。后台强制爆炸的回合会标记为 `forced`。
+
+## 快速启动
+
+Windows 双击：
 
 ```text
 start-rocket.bat
 ```
 
-或手动启动：
+手动启动：
 
 ```bash
-cd E:\Privy\Rocket
+npm start
+```
+
+或：
+
+```bash
 node server.js
 ```
 
-可选环境变量：
-
-```bash
-PORT=3000 node server.js
-```
-
-Windows PowerShell：
+指定端口：
 
 ```powershell
-$env:PORT="3000"
+$env:PORT="3001"
 node server.js
 ```
 
-访问：
+访问地址：
 
 - 玩家端：http://localhost:3000/
 - 后台端：http://localhost:3000/admin
 
-后台默认免登录，MVP 版本不包含后台密码功能。
+如果 3000 已被其他服务占用，本地手动启动需要自己换端口；Linux 脚本支持端口自增。
 
 ## OpenCloudOS 部署
 
-把项目上传到服务器后，在项目目录执行：
+在服务器项目目录执行：
 
 ```bash
 sudo bash deploy-opencloudos.sh
 ```
 
-部署脚本会做这些事：
+脚本会尝试自动拉取 Git 更新、部署到 `/opt/rocket-crash-platform`、创建 `rocket-crash` systemd 服务，并在 `BASE_PORT` 到 `MAX_PORT` 范围内自动选择可用端口。
+部署完成时会优先使用公网 IP 打印玩家端和后台端 URL；如果需要指定域名或公网 IP，可以传 `PUBLIC_HOST`：
 
-- 检查并尝试安装 Node.js。
-- 把项目部署到 `/opt/rocket-crash-platform`。
-- 创建 systemd 服务 `rocket-crash`。
-- 使用 `start-linux.sh` 启动服务。
-- 自动选择可用端口。
-- 如果当前目录是 Git 仓库，部署前自动拉取当前分支最新代码。
-- 如果 firewalld 正在运行，会开放端口范围。
+```bash
+sudo PUBLIC_HOST=rocket.example.com bash deploy-opencloudos.sh
+```
 
-默认端口规则：
+默认端口范围：
 
 ```text
 BASE_PORT=3000
 MAX_PORT=3050
 ```
 
-启动时会先尝试 `3000`，如果被占用就尝试 `3001`，一直递增到 `3050`。实际选中的端口会写入：
-
-```text
-/opt/rocket-crash-platform/data/runtime.env
-```
-
-端口检测使用 Node.js 实际尝试绑定端口，而不是只解析 `ss` 输出。这样如果 `3000` 已经被其他服务占用，服务会跳到下一个可用端口。
-
-如果你已经部署过，更新脚本后重新部署即可：
-
-```bash
-sudo bash deploy-opencloudos.sh
-```
-
-如果只是想让已部署目录重新选端口：
-
-```bash
-sudo systemctl restart rocket-crash
-sudo cat /opt/rocket-crash-platform/data/runtime.env
-```
-
-自定义端口范围：
-
-```bash
-sudo BASE_PORT=3100 MAX_PORT=3150 bash deploy-opencloudos.sh
-```
-
-默认会从当前 Git 分支自动更新再部署：
-
-```bash
-sudo bash deploy-opencloudos.sh
-```
-
-跳过 Git 更新：
-
-```bash
-sudo UPDATE_FROM_GIT=0 bash deploy-opencloudos.sh
-```
-
-指定拉取分支：
-
-```bash
-sudo GIT_BRANCH=main bash deploy-opencloudos.sh
-```
-
-常用管理命令：
+常用命令：
 
 ```bash
 sudo systemctl status rocket-crash
 sudo systemctl restart rocket-crash
 sudo journalctl -u rocket-crash -f
+sudo cat /opt/rocket-crash-platform/data/runtime.env
 ```
 
-如果只是 Linux 手动启动，不安装 systemd 服务：
+更多部署细节见 [部署文档](docs/DEPLOYMENT.md)。
 
-```bash
-BASE_PORT=3000 MAX_PORT=3050 bash start-linux.sh
-```
+## 重要口径
 
-## 后台功能说明
+- 后台当前不需要密码，这是本地 MVP 设计，不适合公网生产环境。
+- 玩家端不提前显示爆点，也不显示 Hash；爆炸后才通过 `crash` 事件公开验证数据。
+- 机器人下注、提现、输赢不计入平台金额指标；只记录机器人数量和展示效果。
+- 下注金额必须命中后台配置的筹码档位，例如 `10,50,100,500,1000`。
+- `1000` 筹码在玩家端显示为 `1K`。
+- Auto Cashout 默认关闭，只有用户主动勾选后才提交自动提现倍率。
+- 飞行倍率公式是 `exp(elapsedMs / 6500)`，显示时向下保留两位小数。
 
-- 顶部指标：用于观察本地演示数据。总下注、总返还和平台盈亏只统计真实玩家金额；机器人只统计数量。
-- 当前回合：显示当前局状态、实时倍率、预设爆点、奖池承受上限和公平性 Hash。后台能看到爆点，玩家端飞行阶段看不到。
-- 强制爆炸：本地测试用。留空会按当前倍率立即爆炸；填写倍率会把当前局爆点改成该值。这类回合会标记为 `forced`。
-- 暂停/恢复：暂停后不再开新局；当前局如果已经开始，会按当前状态继续走完。
-- 游戏参数：保存到 `data/db.json`。多数参数下一局完整生效，当前已经创建的回合不会全部重算。
-- 机器人下注间隔：后台 `机器人下注最小间隔 ms` 和 `机器人下注最大间隔 ms` 控制机器人等待期间陆续下注的节奏。服务端不会在起飞前最后一刻补齐未下注机器人，避免列表瞬间刷出一批机器人。
-- 玩家管理：只管理真实玩家。余额加减输入正数是加积分，输入负数是扣积分，用于本地测试补余额或修正余额。
-- 回合记录：显示历史爆点、总下注、总返还和平台盈亏。带 `forced` 的回合不应作为公平随机局验证。
-- 玩家端默认不显示 Hash。公平性数据仍由服务端保留，爆炸后会在接口数据里公开，后台可以查看。
-- 玩家端上方显示爆点历史；`History` 按钮显示当前用户自己的下注历史。
-
-## 飞行曲线
-
-### 1. 飞行倍率
-
-真实倍率按时间指数增长：
+## 项目结构
 
 ```text
-currentMultiplier = exp(elapsedMs / 6500)
-currentMultiplier = floor(currentMultiplier * 100) / 100
-```
-
-大白话解释：
-
-- `elapsedMs` 是火箭起飞后过去了多少毫秒。
-- `/ 6500` 是速度参数，数字越小，倍率涨得越快；数字越大，涨得越慢。
-- `exp(...)` 是指数增长，所以刚开始涨得慢，后面会越来越快。
-- `floor(currentMultiplier * 100) / 100` 是把倍率向下保留两位小数，比如 `1.239` 显示成 `1.23x`。
-- 这条公式只决定当前飞到了多少倍，不决定爆点。
-
-爆炸判断：
-
-```text
-currentMultiplier >= crashMultiplier
-```
-
-大白话解释：
-
-- 当前倍率涨到或超过本局提前算好的爆点，火箭就爆炸。
-- 玩家在这之前提现成功，之后就输掉本局下注。
-
-普通随机局的最大爆点由后台 `最大倍率` 控制。默认是 `100x`，不是算法只能算到 `100x`；后台可以把它调高，服务端当前限制最高 `1000x`。
-
-### 奖池承受上限
-
-真实玩家下注后，服务端会计算奖池最多能承受多少倍：
-
-```text
-poolCapMultiplier = prizePool / humanOpenBetAmount
-crashMultiplier = min(randomCrashMultiplier, poolCapMultiplier, maxCrashMultiplier)
-```
-
-大白话解释：
-
-- `prizePool` 是后台奖池余额。
-- `humanOpenBetAmount` 是当前局还没结算的真实玩家下注总额。
-- 如果真实玩家总共下注 `100`，奖池有 `1000`，那奖池最多承受 `10x` 总返还。
-- 如果随机爆点算出 `25x`，但奖池只能承受 `10x`，这一局真实爆点会被压到 `10x`。
-- 机器人下注不消耗奖池，也不计入后台总下注、总返还和平台盈亏。
-- 真实玩家下注会进入奖池，真实玩家提现返还会从奖池扣除。
-
-### 2. 前端视觉轨迹
-
-前端画面为了让轨迹稳定，会把倍率转成 0 到 1 的进度：
-
-```text
-progress = clamp(log(currentMultiplier) / log(12), 0, 1)
-x = left + progress * width
-y = bottom - progress^1.45 * height
-```
-
-大白话解释：
-
-- `progress` 是画面进度，`0` 表示左下角起飞，`1` 表示接近右上方。
-- `log(currentMultiplier) / log(12)` 是把倍率压缩成适合屏幕显示的比例，避免高倍率一下飞出屏幕。
-- `x` 随着 `progress` 增大一直往右走。
-- `y` 用 `progress^1.45`，让火箭起步更平缓，后段抬升更明显。
-- 这只是视觉显示公式，不参与结算。
-
-火箭的视觉轨迹不会决定输赢，服务端的 `currentMultiplier >= crashMultiplier` 才会结算爆炸。
-
-## 实时通信
-
-玩家端连接：
-
-```text
-ws://host/ws?playerId=...
-```
-
-服务端不再每 `100ms` 推完整状态，只推这些小事件：
-
-```text
-snapshot          连接后初始状态
-round_start       新局开始
-bet_placed        有玩家或机器人下注
-flight_start      火箭起飞，包含 launchAt 和曲线参数
-cashout           有玩家或机器人跳出
-crash             火箭爆炸，才公开 crashMultiplier/serverSeed/hmac
-settings_updated  后台参数变化
-player_update     当前玩家余额变化
-```
-
-飞行中倍率不持续推送。前端收到 `flight_start` 后，用服务端给的 `launchAt` 自己计算：
-
-```text
-elapsedMs = browserServerNow - launchAt
-currentMultiplier = exp(elapsedMs / 6500)
-```
-
-玩家点击提现时，客户端只发送“我要提现”。服务端用自己的时间重新计算当前倍率并结算，所以前端本地动画不能决定输赢。
-
-### 3. 爆点生成
-
-每局开始时服务端先生成一个秘密种子：
-
-```text
-serverSeed = random 32 bytes
-serverSeedHash = sha256(serverSeed)
-```
-
-大白话解释：
-
-- `serverSeed` 是本局的秘密随机数。
-- `serverSeedHash` 是这个秘密的指纹。
-- 开局前只公开指纹，不公开秘密本身。
-- 这样玩家可以知道服务端不能事后换种子，但也不能提前知道爆点。
-
-用种子和局号生成随机数：
-
-```text
-hmac = HMAC_SHA256(serverSeed, nonce)
-sample = first 13 hex chars of hmac
-random = sample / 0x10000000000000
-```
-
-大白话解释：
-
-- `nonce` 是递增局号，每局不同。
-- `HMAC_SHA256` 会把 `serverSeed + nonce` 变成一串看起来随机的十六进制字符。
-- 取前 13 位转成数字，再除以最大值，得到一个 `0` 到 `1` 之间的小数。
-- 这个小数越接近 `1`，爆点越高；越接近 `0`，爆点越低。
-
-先判断是否 1.00x 即爆：
-
-```text
-instantCrashChance = instantCrashBps / 10000
-if random < instantCrashChance:
-  crashMultiplier = 1.00
-```
-
-大白话解释：
-
-- `instantCrashBps` 是后台可配置的 `1.00x` 即爆概率。
-- `100 bps` 等于 `1%`，`150 bps` 等于 `1.5%`。
-- 如果命中这个概率，火箭刚起飞就是 `1.00x` 爆炸。
-- 没命中时，才进入普通爆点计算。
-
-把随机数变成普通爆点：
-
-```text
-adjustedRandom = (random - instantCrashChance) / (1 - instantCrashChance)
-houseFactor = 1 - houseEdgeBps / 10000
-rawCrash = houseFactor / (1 - adjustedRandom)
-crashMultiplier = floor(rawCrash * 100) / 100
-crashMultiplier = clamp(crashMultiplier, 1.01, maxCrashMultiplier)
-```
-
-大白话解释：
-
-- `houseEdgeBps` 是平台优势，默认 `150`，意思是 `1.5%`。
-- `houseFactor = 0.985`，表示整体爆点会乘上 `98.5%`。
-- `adjustedRandom` 是排除即爆概率之后重新拉伸出来的随机数。
-- `1 - adjustedRandom` 越小，除出来的结果越大，所以高倍率会少见。
-- `floor(... * 100) / 100` 是向下保留两位小数。
-- 普通爆点最小是 `1.01x`，`1.00x` 只由“1.00 爆炸 bps”这个配置控制。
-- `clamp(..., 1.01, maxCrashMultiplier)` 是限制普通爆点的上下限。
-
-### 4. 下注返还
-
-提现成功时：
-
-```text
-payout = betAmount * cashoutMultiplier
-```
-
-大白话解释：
-
-- 下注 `100`，在 `2.35x` 提现，返还就是 `235`。
-- 这里的返还包含本金，不是只算利润。
-- 如果没提现就爆炸，返还是 `0`。
-
-自动提现判断：
-
-```text
-autoCashout < crashMultiplier
-currentMultiplier >= autoCashout
-```
-
-大白话解释：
-
-- 自动提现倍率必须小于真实爆点，才有机会成功。
-- 当前飞行倍率达到玩家设置的自动提现倍率时，系统自动帮玩家跳下。
-- 如果爆点刚好小于或等于自动提现倍率，就会先爆炸，自动提现失败。
-- 玩家端自动提现默认关闭，只有勾选 Auto Cashout 后才会提交自动提现倍率。
-
-### 5. 纯机器人高飞
-
-下注结束、火箭起飞前，服务端会检查本局是否只有机器人下注：
-
-```text
-if hasHumanBet:
-  keep normal crashMultiplier
-else if random < botOnlyHighFlightBps / 10000:
-  crashMultiplier = random between botOnlyHighFlightMin and botOnlyHighFlightMax
-```
-
-大白话解释：
-
-- 只要有真实玩家下注，就不启用这个逻辑，仍然使用公平随机爆点。
-- 如果本局只有机器人，才会按后台 `纯机器人高飞 bps` 的概率触发。
-- 触发后爆点会随机落在后台设置的高飞区间，默认是 `100x` 到 `500x`。
-- 这用于本地演示气氛，不参与真实玩家公平局。
-
-## 公平性复算
-
-爆炸点由服务端种子和 nonce 计算：
-
-1. 回合开始前公开 `serverSeedHash = sha256(serverSeed)`。
-2. 回合结束后公开 `serverSeed`、`nonce`、`hmac`。
-3. 使用 `HMAC_SHA256(serverSeed, nonce)` 得到随机数，再按后台 house edge 和上限计算 crash multiplier。
-
-后台“强制爆炸”会把该局标记为 `forced`，这类回合不应参与公平性验证。
-
-## 爆点传输
-
-玩家端实时连接 `/ws?playerId=...`，服务端通过 WebSocket 推送事件。
-
-下注和飞行阶段只推送：
-
-```json
-{
-  "seedHash": "sha256(serverSeed)",
-  "currentMultiplier": 1.42,
-  "phase": "flying"
-}
-```
-
-不会提前把 `crashMultiplier` 或 `serverSeed` 发给玩家端。
-
-爆炸后才通过 `crash` 事件推送：
-
-```json
-{
-  "phase": "crashed",
-  "crashMultiplier": 2.31,
-  "serverSeed": "...",
-  "hmac": "..."
-}
+Rocket/
+  server.js                 Node.js 原生 HTTP + WebSocket 服务
+  public/
+    index.html              玩家端页面
+    app.js                  玩家端逻辑
+    admin.html              后台页面
+    admin.js                后台逻辑
+    styles.css              前后台样式
+  data/
+    db.json                 本地数据，运行时生成
+    runtime.env             Linux 启动脚本写入的运行端口
+  docs/                     产品、技术、接口、运营、部署文档
+  start-rocket.bat          Windows 一键启动
+  start-linux.sh            Linux 前台启动，端口自增
+  deploy-opencloudos.sh     OpenCloudOS systemd 部署
 ```
 
 ## 生产化待办
 
-- 把 JSON 持久化替换为 PostgreSQL/MySQL，并使用事务锁保护下注、扣款和提现。
-- 接入账号系统、设备指纹、限额、风控规则和完整审计日志。
-- 后台管理启用 RBAC、2FA、登录限速和操作复核。
-- 所有资金相关接口使用整数分单位，补全幂等键和账变流水。
-- 使用反向代理启用 HTTPS、CSP、安全 Cookie 和请求限流。
+- 后台启用账号体系、RBAC、2FA、操作审计和登录限速。
+- JSON 持久化替换为 PostgreSQL / MySQL，并使用事务锁保护下注、扣款、提现和结算。
+- 补齐真实资金合规、KYC、AML、地区限制、支付审计和风控规则。
+- 接入 HTTPS、CSP、安全 Cookie、反向代理限流和日志监控。
+- 增加完整自动化测试、压测、异常恢复和备份策略。
