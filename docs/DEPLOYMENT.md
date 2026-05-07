@@ -303,9 +303,82 @@ proxy_set_header Upgrade $http_upgrade;
 proxy_set_header Connection "upgrade";
 ```
 
-## 11. 故障排查
+## 11. Cloudflare Tunnel
 
-### 10.1 部署后不是 3001
+Cloudflare Tunnel 推荐接法：
+
+```text
+Browser
+  https://rocket.example.com
+  wss://rocket.example.com/ws
+        |
+        v
+Cloudflare Tunnel
+        |
+        v
+Origin
+  http://localhost:PORT
+  ws://localhost:PORT/ws
+```
+
+也就是说，浏览器到 Cloudflare 是 HTTPS / WSS，Cloudflare Tunnel 到本机 Node 服务可以继续用 HTTP / WS。此时不要给 `deploy-opencloudos.sh` 传 `HTTPS_CERT_PATH` 和 `HTTPS_KEY_PATH`，否则 Node 源站会切换成 HTTPS，和 Tunnel 的 `http://localhost:PORT` 配置不匹配。
+
+推荐 `cloudflared` ingress：
+
+```yaml
+ingress:
+  - hostname: rocket.example.com
+    service: http://localhost:3000
+  - service: http_status:404
+```
+
+如果实际端口自增到了 `3001`，就改成：
+
+```yaml
+ingress:
+  - hostname: rocket.example.com
+    service: http://localhost:3001
+  - service: http_status:404
+```
+
+查看实际端口：
+
+```bash
+sudo cat /opt/rocket-crash-platform/data/runtime.env
+```
+
+如果你坚持让 Tunnel 连接源站 HTTPS，则 ingress 要写 `https://localhost:PORT`。如果源站证书是自签或不是 Cloudflare 信任链，还要配置：
+
+```yaml
+originRequest:
+  noTLSVerify: true
+```
+
+Cloudflare Tunnel 排查：
+
+```bash
+sudo journalctl -u cloudflared -f
+sudo cat /opt/rocket-crash-platform/data/runtime.env
+curl -i http://127.0.0.1:3000/api/state
+curl -i -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" \
+  -H "Sec-WebSocket-Version: 13" \
+  http://127.0.0.1:3000/ws
+```
+
+最后一个命令正常应返回：
+
+```text
+HTTP/1.1 101 Switching Protocols
+```
+
+如果本机返回 101，但浏览器 `wss://rocket.example.com/ws` 失败，问题在 Cloudflare Tunnel / Public Hostname / DNS / WebSocket 转发配置，不在 Node 服务。
+
+## 12. 故障排查
+
+### 12.1 部署后不是 3001
 
 如果脚本选择了 3000，说明脚本实际 bind 检测认为 3000 可用。请确认占用 3000 的服务是否在同一台机器、同一网络命名空间、同一 IP 绑定范围内。
 
@@ -315,7 +388,7 @@ proxy_set_header Connection "upgrade";
 sudo ss -lntp | grep ':3000'
 ```
 
-### 10.2 浏览器还加载旧 JS / CSS
+### 12.2 浏览器还加载旧 JS / CSS
 
 当前静态服务对 `.html`、`.js`、`.css` 使用 `no-store`，并且页面资源带版本号。若仍有旧资源：
 
@@ -323,7 +396,7 @@ sudo ss -lntp | grep ':3000'
 - 强刷浏览器。
 - 检查页面源代码中的 `?v=` 是否为最新版本。
 
-### 10.3 `/api/ping` 404
+### 12.3 `/api/ping` 404
 
 当前代码保留 `/api/ping`。如果 404，通常说明访问的端口上跑的是旧进程或其他服务。
 
@@ -334,7 +407,7 @@ sudo systemctl restart rocket-crash
 sudo journalctl -u rocket-crash -f
 ```
 
-### 10.4 机器人最后一刻集中出现
+### 12.4 机器人最后一刻集中出现
 
 当前版本不会在起飞前补齐机器人。如果仍出现集中刷新：
 

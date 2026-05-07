@@ -88,6 +88,8 @@ sudo PUBLIC_HOST=rocket.example.com \
   bash deploy-opencloudos.sh
 ```
 
+如果使用 Cloudflare Tunnel，推荐不要给 Node 配 HTTPS 证书。让 Cloudflare 对外提供 HTTPS / WSS，Tunnel 到源站使用 `http://localhost:PORT` 即可。详细配置见 [部署文档](docs/DEPLOYMENT.md#11-cloudflare-tunnel)。
+
 默认端口范围：
 
 ```text
