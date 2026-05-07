@@ -84,6 +84,21 @@ MAX_PORT=3050
 /opt/rocket-crash-platform/data/runtime.env
 ```
 
+端口检测使用 Node.js 实际尝试绑定端口，而不是只解析 `ss` 输出。这样如果 `3000` 已经被其他服务占用，服务会跳到下一个可用端口。
+
+如果你已经部署过，更新脚本后重新部署即可：
+
+```bash
+sudo bash deploy-opencloudos.sh
+```
+
+如果只是想让已部署目录重新选端口：
+
+```bash
+sudo systemctl restart rocket-crash
+sudo cat /opt/rocket-crash-platform/data/runtime.env
+```
+
 自定义端口范围：
 
 ```bash

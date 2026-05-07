@@ -21,19 +21,22 @@ fi
 
 port_in_use() {
   local port="$1"
-  if command -v ss >/dev/null 2>&1; then
-    ss -ltnH | awk '{print $4}' | grep -Eq "[:.]${port}$"
-    return
-  fi
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
-    return
-  fi
-  if command -v netstat >/dev/null 2>&1; then
-    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}$"
-    return
-  fi
-  timeout 1 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1
+  "$NODE_BIN" - "$port" <<'NODE'
+const net = require("node:net");
+const port = Number(process.argv[2]);
+const server = net.createServer();
+
+server.once("error", (error) => {
+  if (error && error.code === "EADDRINUSE") {
+    process.exit(0);
+  }
+  process.exit(2);
+});
+
+server.listen({ port, host: "0.0.0.0", exclusive: true }, () => {
+  server.close(() => process.exit(1));
+});
+NODE
 }
 
 choose_port() {
