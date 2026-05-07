@@ -46,13 +46,7 @@ node server.js
 - 玩家端：http://localhost:3000/
 - 后台端：http://localhost:3000/admin
 
-后台默认是本地开发免登录。如果需要打开后台密码：
-
-```powershell
-$env:ADMIN_AUTH="1"
-$env:ADMIN_PASSWORD="change-me"
-node server.js
-```
+后台默认免登录，MVP 版本不包含后台密码功能。
 
 ## OpenCloudOS 部署
 
@@ -69,6 +63,7 @@ sudo bash deploy-opencloudos.sh
 - 创建 systemd 服务 `rocket-crash`。
 - 使用 `start-linux.sh` 启动服务。
 - 自动选择可用端口。
+- 如果当前目录是 Git 仓库，部署前自动拉取当前分支最新代码。
 - 如果 firewalld 正在运行，会开放端口范围。
 
 默认端口规则：
@@ -105,10 +100,22 @@ sudo cat /opt/rocket-crash-platform/data/runtime.env
 sudo BASE_PORT=3100 MAX_PORT=3150 bash deploy-opencloudos.sh
 ```
 
-云服务器部署默认开启后台密码。如果不传 `ADMIN_PASSWORD`，脚本会自动生成一个并在部署结束时打印：
+默认会从当前 Git 分支自动更新再部署：
 
 ```bash
-sudo ADMIN_PASSWORD='your-strong-password' bash deploy-opencloudos.sh
+sudo bash deploy-opencloudos.sh
+```
+
+跳过 Git 更新：
+
+```bash
+sudo UPDATE_FROM_GIT=0 bash deploy-opencloudos.sh
+```
+
+指定拉取分支：
+
+```bash
+sudo GIT_BRANCH=main bash deploy-opencloudos.sh
 ```
 
 常用管理命令：

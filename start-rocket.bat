@@ -4,7 +4,6 @@ setlocal
 cd /d "%~dp0"
 
 if "%PORT%"=="" set "PORT=3000"
-if "%ADMIN_AUTH%"=="" set "ADMIN_AUTH=0"
 
 where node >nul 2>nul
 if %errorlevel%==0 (
@@ -23,7 +22,7 @@ if not exist "%NODE_EXE%" if not "%NODE_EXE%"=="node" (
 echo Starting Rocket Crash Platform...
 echo Player: http://localhost:%PORT%/
 echo Admin : http://localhost:%PORT%/admin
-echo Admin auth: disabled for local development
+echo Admin auth: disabled
 echo.
 
 start "" "http://localhost:%PORT%/"

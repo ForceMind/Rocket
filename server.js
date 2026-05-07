@@ -5,7 +5,6 @@ const path = require("node:path");
 const { URL } = require("node:url");
 
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
@@ -32,8 +31,6 @@ const DEFAULT_SETTINGS = {
   paused: false
 };
 
-const ADMIN_AUTH_ENABLED = process.env.ADMIN_AUTH === "1";
-
 const BOT_NAMES = [
   "Astra", "Nova", "Orion", "Vega", "Luna", "Atlas", "Comet", "Cosmo",
   "Raptor", "Blaze", "Echo", "Pulse", "Zenith", "Orbit", "Meteor", "Ion",
@@ -56,7 +53,6 @@ const MIME_TYPES = {
 let db = loadDb();
 let currentRound = null;
 let clients = new Set();
-let adminTokens = new Map();
 let lastBroadcastAt = 0;
 
 function nowIso() {
@@ -702,26 +698,7 @@ function readJson(req) {
 }
 
 function requireAdmin(req) {
-  if (!ADMIN_AUTH_ENABLED) {
-    return { localDev: true };
-  }
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  const session = adminTokens.get(token);
-  if (!session || session.expiresAt < Date.now()) {
-    throw httpError(401, "后台登录已失效");
-  }
-  session.lastSeenAt = Date.now();
-  return session;
-}
-
-function cleanExpiredAdminTokens() {
-  const timestamp = Date.now();
-  for (const [token, session] of adminTokens.entries()) {
-    if (session.expiresAt < timestamp) {
-      adminTokens.delete(token);
-    }
-  }
+  return { localDev: true };
 }
 
 async function handleApi(req, res, url) {
@@ -813,24 +790,7 @@ async function handleApi(req, res, url) {
   }
 
   if (route === "POST /api/admin/login") {
-    const body = await readJson(req);
-    if (!ADMIN_AUTH_ENABLED) {
-      return sendJson(res, 200, { token: "local-dev", admin: adminSnapshot() });
-    }
-    if (String(body.password || "") !== ADMIN_PASSWORD) {
-      throw httpError(401, "后台密码错误");
-    }
-    cleanExpiredAdminTokens();
-    const token = crypto.randomBytes(32).toString("hex");
-    adminTokens.set(token, {
-      token,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 12 * 60 * 60 * 1000,
-      lastSeenAt: Date.now()
-    });
-    audit("admin.login");
-    saveDb();
-    return sendJson(res, 200, { token, admin: adminSnapshot() });
+    return sendJson(res, 200, { token: "local-dev", admin: adminSnapshot() });
   }
 
   if (url.pathname.startsWith("/api/admin/")) {
@@ -1021,15 +981,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 setInterval(tick, 50);
-setInterval(cleanExpiredAdminTokens, 60_000);
 createRound();
 
 server.listen(PORT, () => {
   console.log(`Rocket Crash Platform running at http://localhost:${PORT}`);
   console.log(`Admin console: http://localhost:${PORT}/admin`);
-  if (!ADMIN_AUTH_ENABLED) {
-    console.log("Admin authentication is disabled for local development. Set ADMIN_AUTH=1 to enable it.");
-  } else if (ADMIN_PASSWORD === "admin123") {
-    console.log("Default admin password is admin123. Set ADMIN_PASSWORD before sharing the server.");
-  }
+  console.log("Admin authentication is disabled for MVP/local operation.");
 });

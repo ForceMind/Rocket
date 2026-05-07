@@ -1,10 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 
 const ui = {
-  overlay: $("#adminLoginOverlay"),
-  loginForm: $("#adminLoginForm"),
-  loginError: $("#adminLoginError"),
-  password: $("#adminPassword"),
   app: $("#adminApp"),
   status: $("#adminStatus"),
   refreshButton: $("#refreshButton"),
@@ -29,7 +25,7 @@ const ui = {
   roundsBody: $("#roundsBody")
 };
 
-let token = localStorage.getItem("rocket.adminToken") || "local-dev";
+let token = "local-dev";
 let state = null;
 let pollTimer = null;
 let settingsDirty = false;
@@ -76,18 +72,15 @@ async function adminApi(path, options = {}) {
 }
 
 function unlockAdmin() {
-  ui.overlay.classList.add("hidden");
   ui.app.classList.remove("locked");
-  ui.status.textContent = "已登录";
+  ui.status.textContent = "免密";
   ui.status.classList.add("online");
 }
 
 function lockAdmin() {
-  token = "";
-  localStorage.removeItem("rocket.adminToken");
-  ui.overlay.classList.remove("hidden");
+  token = "local-dev";
   ui.app.classList.add("locked");
-  ui.status.textContent = "未登录";
+  ui.status.textContent = "离线";
   ui.status.classList.remove("online");
   clearInterval(pollTimer);
 }
@@ -101,8 +94,7 @@ async function refresh() {
     render();
     return true;
   } catch (error) {
-    ui.loginError.textContent = error.message;
-    if (!token) throw error;
+    console.error(error);
     return false;
   }
 }
@@ -219,30 +211,6 @@ function render(options = {}) {
   renderRounds();
 }
 
-ui.loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  ui.loginError.textContent = "";
-  try {
-    const response = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: ui.password.value })
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "登录失败");
-    }
-    token = data.token;
-    localStorage.setItem("rocket.adminToken", token);
-    state = data.admin;
-    unlockAdmin();
-    render();
-    startPolling();
-  } catch (error) {
-    ui.loginError.textContent = error.message;
-  }
-});
-
 ui.refreshButton.addEventListener("click", refresh);
 
 ui.settingsForm.addEventListener("submit", async (event) => {
@@ -324,12 +292,8 @@ ui.playersBody.addEventListener("click", async (event) => {
   }
 });
 
-if (token) {
-  refresh()
-    .then((ok) => {
-      if (ok) startPolling();
-    })
-    .catch(lockAdmin);
-} else {
-  lockAdmin();
-}
+refresh()
+  .then((ok) => {
+    if (ok) startPolling();
+  })
+  .catch(lockAdmin);

@@ -6,8 +6,10 @@ APP_DIR="${APP_DIR:-/opt/rocket-crash-platform}"
 RUN_USER="${RUN_USER:-rocket}"
 BASE_PORT="${BASE_PORT:-3000}"
 MAX_PORT="${MAX_PORT:-$((BASE_PORT + 50))}"
-ADMIN_AUTH="${ADMIN_AUTH:-1}"
 OPEN_FIREWALL="${OPEN_FIREWALL:-1}"
+UPDATE_FROM_GIT="${UPDATE_FROM_GIT:-1}"
+GIT_REMOTE="${GIT_REMOTE:-origin}"
+GIT_BRANCH="${GIT_BRANCH:-}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -31,6 +33,53 @@ install_node_if_missing() {
   fi
 }
 
+install_git_if_needed() {
+  if [[ "$UPDATE_FROM_GIT" != "1" || ! -d "$SOURCE_DIR/.git" ]]; then
+    return 0
+  fi
+  if command -v git >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Git was not found. Trying to install git with dnf/yum..."
+  if command -v dnf >/dev/null 2>&1; then
+    dnf -y install git
+  elif command -v yum >/dev/null 2>&1; then
+    yum -y install git
+  else
+    echo "Neither dnf nor yum was found. Install git manually or run UPDATE_FROM_GIT=0." >&2
+    exit 1
+  fi
+}
+
+update_source_from_git() {
+  if [[ "$UPDATE_FROM_GIT" != "1" ]]; then
+    echo "Git update skipped because UPDATE_FROM_GIT=0."
+    return 0
+  fi
+  if [[ ! -d "$SOURCE_DIR/.git" ]]; then
+    echo "Git update skipped because ${SOURCE_DIR} is not a Git repository."
+    return 0
+  fi
+
+  install_git_if_needed
+
+  local branch="$GIT_BRANCH"
+  if [[ -z "$branch" ]]; then
+    branch="$(git -C "$SOURCE_DIR" symbolic-ref --quiet --short HEAD || true)"
+  fi
+  if [[ -z "$branch" ]]; then
+    echo "Git update skipped because current checkout is not on a branch. Set GIT_BRANCH to force one."
+    return 0
+  fi
+
+  echo "Pulling latest code from ${GIT_REMOTE}/${branch}..."
+  git config --global --add safe.directory "$SOURCE_DIR" >/dev/null 2>&1 || true
+  git -C "$SOURCE_DIR" fetch --prune "$GIT_REMOTE"
+  git -C "$SOURCE_DIR" pull --ff-only "$GIT_REMOTE" "$branch"
+}
+
+update_source_from_git
 install_node_if_missing
 
 NODE_BIN="$(command -v node)"
@@ -38,14 +87,6 @@ NODE_MAJOR="$("$NODE_BIN" -p "Number(process.versions.node.split('.')[0])")"
 if [[ "$NODE_MAJOR" -lt 18 ]]; then
   echo "Node.js 18+ is required. Current: $("$NODE_BIN" -v)" >&2
   exit 1
-fi
-
-if [[ "$ADMIN_AUTH" == "1" && -z "${ADMIN_PASSWORD:-}" ]]; then
-  if command -v openssl >/dev/null 2>&1; then
-    ADMIN_PASSWORD="$(openssl rand -hex 12)"
-  else
-    ADMIN_PASSWORD="$(tr -d '-' < /proc/sys/kernel/random/uuid)"
-  fi
 fi
 
 if ! id "$RUN_USER" >/dev/null 2>&1; then
@@ -85,8 +126,6 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=NODE_BIN=${NODE_BIN}
 Environment=BASE_PORT=${BASE_PORT}
 Environment=MAX_PORT=${MAX_PORT}
-Environment=ADMIN_AUTH=${ADMIN_AUTH}
-Environment=ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
 ExecStart=${APP_DIR}/start-linux.sh
 Restart=always
 RestartSec=3
@@ -130,12 +169,7 @@ echo "Port range: ${BASE_PORT}-${MAX_PORT}"
 echo "Selected port: ${PORT}"
 echo "Player URL: http://${SERVER_IP}:${PORT}/"
 echo "Admin URL : http://${SERVER_IP}:${PORT}/admin"
-if [[ "$ADMIN_AUTH" == "1" ]]; then
-  echo "Admin auth: enabled"
-  echo "Admin password: ${ADMIN_PASSWORD}"
-else
-  echo "Admin auth: disabled"
-fi
+echo "Admin auth: disabled"
 echo
 echo "Useful commands:"
 echo "  systemctl status ${SERVICE_NAME}"
