@@ -809,3 +809,293 @@ td small {
     min-height: 34px;
   }
 }
+
+/* Player view is captured as a square livestream scene. Keep this layout
+   fixed even on narrow square canvases; only the admin should collapse. */
+body:not(.admin-body) .app-shell {
+  width: min(100vw, 100vh);
+  height: min(100vw, 100vh);
+  min-height: 0;
+  overflow: hidden;
+}
+
+body:not(.admin-body) .topbar {
+  flex-direction: row;
+  align-items: center;
+}
+
+body:not(.admin-body) .topbar-actions {
+  width: auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+body:not(.admin-body) .game-layout {
+  display: grid;
+  grid-template-areas: "players stage bet";
+  grid-template-columns: clamp(145px, 23%, 180px) minmax(0, 1fr) clamp(170px, 28%, 220px);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+body:not(.admin-body) .table-panel {
+  grid-area: players;
+  grid-column: auto;
+  grid-row: auto;
+  order: 0;
+}
+
+body:not(.admin-body) .stage-panel {
+  grid-area: stage;
+  grid-column: auto;
+  grid-row: auto;
+  order: 0;
+}
+
+body:not(.admin-body) .bet-panel {
+  grid-area: bet;
+  grid-column: auto;
+  grid-row: auto;
+  order: 0;
+}
+
+body:not(.admin-body) .stage {
+  height: auto;
+}
+
+body:not(.admin-body) .section-title {
+  min-height: 46px;
+  padding: 10px 12px;
+}
+
+body:not(.admin-body) .section-title h2 {
+  font-size: 14px;
+}
+
+/* 750x750 livestream fit: every primary player control stays inside the square. */
+body:not(.admin-body) {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+body:not(.admin-body) .app-shell {
+  gap: 0;
+  padding: 8px;
+}
+
+body:not(.admin-body) .topbar {
+  min-height: 44px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+body:not(.admin-body) .brand {
+  gap: 8px;
+}
+
+body:not(.admin-body) .brand-mark {
+  width: 36px;
+  height: 36px;
+}
+
+body:not(.admin-body) .brand strong {
+  font-size: 16px;
+}
+
+body:not(.admin-body) .topbar-actions {
+  gap: 8px;
+}
+
+body:not(.admin-body) .status-pill,
+body:not(.admin-body) .identity,
+body:not(.admin-body) .balance,
+body:not(.admin-body) .ghost-link {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+body:not(.admin-body) .balance {
+  min-width: 86px;
+}
+
+body:not(.admin-body) .game-layout {
+  grid-template-columns: 155px minmax(0, 1fr) 190px;
+  gap: 8px;
+}
+
+body:not(.admin-body) .stage-panel,
+body:not(.admin-body) .bet-panel,
+body:not(.admin-body) .table-panel {
+  border-radius: 7px;
+}
+
+body:not(.admin-body) .stage-head {
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+body:not(.admin-body) .phase-label {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+body:not(.admin-body) .round-id {
+  display: none;
+}
+
+body:not(.admin-body) .history-strip {
+  min-height: 38px;
+  padding: 7px 10px 8px;
+}
+
+body:not(.admin-body) .history-chip {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+body:not(.admin-body) .multiplier-readout strong {
+  font-size: clamp(46px, 8.4vw, 72px);
+}
+
+body:not(.admin-body) .multiplier-readout span {
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+body:not(.admin-body) .bet-panel {
+  overflow: hidden;
+  padding: 10px;
+}
+
+body:not(.admin-body) .bet-form {
+  gap: 8px;
+}
+
+body:not(.admin-body) label {
+  gap: 5px;
+  font-size: 12px;
+}
+
+body:not(.admin-body) input {
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 10px;
+}
+
+body:not(.admin-body) .chip-row {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+body:not(.admin-body) .chip-row button {
+  width: 46px;
+}
+
+body:not(.admin-body) .chip-row button span {
+  font-size: 11px;
+}
+
+body:not(.admin-body) .switch-line {
+  min-height: 26px;
+}
+
+body:not(.admin-body) .primary-button,
+body:not(.admin-body) .cashout-button {
+  min-height: 38px;
+  border-radius: 7px;
+}
+
+body:not(.admin-body) .my-bet {
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+body:not(.admin-body) .message {
+  min-height: 18px;
+  font-size: 12px;
+}
+
+body:not(.admin-body) .table-panel {
+  overflow: hidden;
+}
+
+body:not(.admin-body) .table-panel .section-title {
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+body:not(.admin-body) .table-panel .section-title h2 {
+  font-size: 13px;
+}
+
+body:not(.admin-body) .table-panel .section-title span {
+  font-size: 12px;
+}
+
+body:not(.admin-body) .table-panel .table-wrap {
+  overflow: hidden;
+}
+
+body:not(.admin-body) .table-panel table {
+  table-layout: fixed;
+}
+
+body:not(.admin-body) .table-panel th,
+body:not(.admin-body) .table-panel td {
+  height: 28px;
+  padding: 0 7px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+body:not(.admin-body) .table-panel th:nth-child(4),
+body:not(.admin-body) .table-panel td:nth-child(4) {
+  display: none;
+}
+
+body:not(.admin-body) .table-panel th:nth-child(1),
+body:not(.admin-body) .table-panel td:nth-child(1) {
+  width: 58%;
+}
+
+body:not(.admin-body) .table-panel th:nth-child(2),
+body:not(.admin-body) .table-panel td:nth-child(2) {
+  width: 42%;
+  text-align: right;
+}
+
+@media (max-width: 760px), (max-height: 760px) {
+  body:not(.admin-body) .game-layout {
+    grid-template-columns: 145px minmax(0, 1fr) 178px;
+    gap: 7px;
+  }
+
+  body:not(.admin-body) .topbar-actions {
+    gap: 6px;
+  }
+
+  body:not(.admin-body) .status-pill,
+  body:not(.admin-body) .identity,
+  body:not(.admin-body) .ghost-link {
+    padding: 0 8px;
+  }
+
+  body:not(.admin-body) .balance {
+    min-width: 76px;
+  }
+
+  body:not(.admin-body) .brand span:last-child {
+    display: none;
+  }
+
+  body:not(.admin-body) .multiplier-readout strong {
+    font-size: clamp(40px, 8vw, 62px);
+  }
+}
