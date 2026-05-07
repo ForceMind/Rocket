@@ -34,6 +34,7 @@ const ui = {
 let session = null;
 let snapshot = null;
 let source = null;
+let reconnectTimer = null;
 let messageTimer = null;
 let lastDrawAt = 0;
 let trackedRoundId = null;
@@ -126,31 +127,39 @@ async function login(username) {
 function connectEvents() {
   if (!session?.playerId) return;
   if (source) source.close();
+  clearTimeout(reconnectTimer);
 
   ui.connectionStatus.textContent = "Connecting";
   ui.connectionStatus.classList.remove("online");
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  source = new WebSocket(`${protocol}//${location.host}/ws?playerId=${encodeURIComponent(session.playerId)}`);
-  source.addEventListener("open", () => {
+  const socket = new WebSocket(`${protocol}//${location.host}/ws?playerId=${encodeURIComponent(session.playerId)}`);
+  source = socket;
+  socket.addEventListener("open", () => {
+    if (source !== socket) return;
     ui.connectionStatus.textContent = "Online";
     ui.connectionStatus.classList.add("online");
   });
-  source.addEventListener("message", (event) => {
+  socket.addEventListener("message", (event) => {
+    if (source !== socket) return;
     const message = JSON.parse(event.data);
     if (message.serverTime) {
       serverTimeOffset = message.serverTime - Date.now();
     }
     handleRealtimeEvent(message.type, message.data || {});
   });
-  source.addEventListener("close", () => {
+  socket.addEventListener("close", () => {
+    if (source !== socket) return;
+    source = null;
     ui.connectionStatus.textContent = "Reconnecting";
     ui.connectionStatus.classList.remove("online");
-    setTimeout(connectEvents, 1200);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectEvents, 1200);
   });
-  source.addEventListener("error", () => {
+  socket.addEventListener("error", () => {
+    if (source !== socket) return;
     ui.connectionStatus.textContent = "Reconnecting";
     ui.connectionStatus.classList.remove("online");
-    source.close();
+    socket.close();
   });
 }
 

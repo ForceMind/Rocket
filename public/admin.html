@@ -32,11 +32,11 @@
           <div class="metric"><span>总返还</span><strong id="metricPayout">0.00</strong></div>
           <div class="metric"><span>平台盈亏</span><strong id="metricProfit">0.00</strong></div>
           <div class="metric"><span>奖池余额</span><strong id="metricPrizePool">0.00</strong></div>
-          <div class="metric"><span>本局机器人下注</span><strong id="metricCurrentBotBet">0.00</strong></div>
+          <div class="metric"><span>本局机器人</span><strong id="metricCurrentBotCount">0</strong></div>
           <div class="metric"><span>玩家余额</span><strong id="metricLiability">0.00</strong></div>
         </section>
         <section class="admin-panel wide compact-help">
-          <p class="section-help">顶部指标用于本地观察整体运营状态：总下注和总返还包含历史回合和当前局，机器人下注也计入平台盈亏；奖池余额用于限制真实玩家局的最大可赔付爆点。</p>
+          <p class="section-help">顶部指标用于本地观察整体运营状态：总下注、总返还和平台盈亏只统计真实玩家金额；机器人只统计数量，不计入金额和盈亏。</p>
         </section>
 
         <section class="admin-panel wide">
@@ -139,6 +139,7 @@
               <thead>
                 <tr>
                   <th>时间</th>
+                  <th>人数</th>
                   <th>爆点</th>
                   <th>下注</th>
                   <th>返还</th>

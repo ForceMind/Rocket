@@ -472,8 +472,10 @@ function finishRound() {
   currentRound.crashedAt = crashedAt;
   currentRound.nextRoundAt = crashedAt + db.settings.roundPauseMs;
 
-  const totalBetCents = currentRound.bets.reduce((sum, bet) => sum + bet.amountCents, 0);
-  const totalPayoutCents = currentRound.bets.reduce((sum, bet) => sum + (bet.payoutCents || 0), 0);
+  const humanBets = currentRound.bets.filter((bet) => !bet.isBot);
+  const botBets = currentRound.bets.filter((bet) => bet.isBot);
+  const totalBetCents = humanBets.reduce((sum, bet) => sum + bet.amountCents, 0);
+  const totalPayoutCents = humanBets.reduce((sum, bet) => sum + (bet.payoutCents || 0), 0);
 
   db.rounds.unshift({
     id: currentRound.id,
@@ -491,7 +493,10 @@ function finishRound() {
     totalBet: centsToAmount(totalBetCents),
     totalPayout: centsToAmount(totalPayoutCents),
     houseProfit: centsToAmount(totalBetCents - totalPayoutCents),
-    bets: currentRound.bets.map(publicBet)
+    playerCount: currentRound.bets.length,
+    humanCount: humanBets.length,
+    botCount: botBets.length,
+    bets: humanBets.map(publicBet)
   });
   db.rounds = db.rounds.slice(0, 200);
   audit("round.finished", {
@@ -665,34 +670,77 @@ function roundMoneyTotals(round) {
     totalBet: 0,
     totalPayout: 0,
     houseProfit: 0,
-    botBet: 0,
-    botPayout: 0,
+    botCount: 0,
+    humanCount: 0,
     humanBet: 0,
     humanPayout: 0
   };
   if (!round?.bets) return empty;
   return round.bets.reduce((acc, bet) => {
-    const payout = bet.payoutCents || 0;
-    acc.totalBet += bet.amountCents || 0;
-    acc.totalPayout += payout;
     if (bet.isBot) {
-      acc.botBet += bet.amountCents || 0;
-      acc.botPayout += payout;
+      acc.botCount += 1;
     } else {
+      const payout = bet.payoutCents || 0;
+      acc.humanCount += 1;
       acc.humanBet += bet.amountCents || 0;
       acc.humanPayout += payout;
+      acc.totalBet += bet.amountCents || 0;
+      acc.totalPayout += payout;
     }
     acc.houseProfit = acc.totalBet - acc.totalPayout;
     return acc;
   }, empty);
 }
 
+function persistedRoundMoneyTotals(round) {
+  if (Array.isArray(round?.bets) && round.bets.length > 0) {
+    const totals = round.bets.reduce(
+      (acc, bet) => {
+        if (bet.isBot) {
+          acc.botCount += 1;
+          return acc;
+        }
+        acc.humanCount += 1;
+        acc.totalBet += amountToCents(bet.amount) || 0;
+        acc.totalPayout += amountToCents(bet.payout) || 0;
+        acc.houseProfit = acc.totalBet - acc.totalPayout;
+        return acc;
+      },
+      { totalBet: 0, totalPayout: 0, houseProfit: 0, humanCount: 0, botCount: 0 }
+    );
+    if (totals.botCount === 0 && Number(round.botCount || 0) > 0) {
+      totals.botCount = Number(round.botCount || 0);
+    }
+    return totals;
+  }
+  return {
+    totalBet: amountToCents(round.totalBet) || 0,
+    totalPayout: amountToCents(round.totalPayout) || 0,
+    houseProfit: amountToCents(round.houseProfit) || 0,
+    humanCount: Number(round.humanCount || 0),
+    botCount: Number(round.botCount || 0)
+  };
+}
+
+function adminHistoryRound(round) {
+  const totals = persistedRoundMoneyTotals(round);
+  return {
+    ...round,
+    totalBet: centsToAmount(totals.totalBet),
+    totalPayout: centsToAmount(totals.totalPayout),
+    houseProfit: centsToAmount(totals.houseProfit),
+    humanCount: totals.humanCount,
+    botCount: totals.botCount
+  };
+}
+
 function adminSnapshot() {
   const totals = db.rounds.reduce(
     (acc, round) => {
-      acc.totalBet += amountToCents(round.totalBet) || 0;
-      acc.totalPayout += amountToCents(round.totalPayout) || 0;
-      acc.houseProfit += amountToCents(round.houseProfit) || 0;
+      const roundTotals = persistedRoundMoneyTotals(round);
+      acc.totalBet += roundTotals.totalBet;
+      acc.totalPayout += roundTotals.totalPayout;
+      acc.houseProfit += roundTotals.houseProfit;
       return acc;
     },
     { totalBet: 0, totalPayout: 0, houseProfit: 0 }
@@ -728,7 +776,8 @@ function adminSnapshot() {
       currentBet: centsToAmount(liveTotals.totalBet),
       currentPayout: centsToAmount(liveTotals.totalPayout),
       currentHouseProfit: centsToAmount(liveTotals.houseProfit),
-      currentBotBet: centsToAmount(liveTotals.botBet),
+      currentBotCount: liveTotals.botCount,
+      currentHumanCount: liveTotals.humanCount,
       currentHumanBet: centsToAmount(liveTotals.humanBet),
       prizePool: centsToAmount(db.settings.prizePoolCents),
       poolCapMultiplier: prizePoolCapMultiplier(currentRound),
@@ -736,7 +785,7 @@ function adminSnapshot() {
     },
     round: adminRound(),
     players: playerList.map(privateAdminPlayer),
-    rounds: db.rounds.slice(0, 80),
+    rounds: db.rounds.slice(0, 80).map(adminHistoryRound),
     audit: db.audit.slice(0, 80)
   };
 }

@@ -10,7 +10,7 @@ const ui = {
   metricPayout: $("#metricPayout"),
   metricProfit: $("#metricProfit"),
   metricPrizePool: $("#metricPrizePool"),
-  metricCurrentBotBet: $("#metricCurrentBotBet"),
+  metricCurrentBotCount: $("#metricCurrentBotCount"),
   metricLiability: $("#metricLiability"),
   adminRoundPhase: $("#adminRoundPhase"),
   adminRoundId: $("#adminRoundId"),
@@ -125,7 +125,7 @@ function renderMetrics() {
   ui.metricProfit.textContent = formatMoney(metrics.houseProfit);
   ui.metricProfit.style.color = Number(metrics.houseProfit || 0) >= 0 ? "var(--green)" : "var(--red)";
   ui.metricPrizePool.textContent = formatMoney(metrics.prizePool);
-  ui.metricCurrentBotBet.textContent = formatMoney(metrics.currentBotBet);
+  ui.metricCurrentBotCount.textContent = metrics.currentBotCount || 0;
   ui.metricLiability.textContent = formatMoney(metrics.playerLiability);
 }
 
@@ -188,7 +188,7 @@ function renderRounds() {
   const rounds = state?.rounds || [];
   ui.roundCount.textContent = `${rounds.length} 局`;
   if (rounds.length === 0) {
-    ui.roundsBody.innerHTML = `<tr><td colspan="6">暂无记录</td></tr>`;
+    ui.roundsBody.innerHTML = `<tr><td colspan="7">暂无记录</td></tr>`;
     return;
   }
 
@@ -200,6 +200,7 @@ function renderRounds() {
       return `
         <tr>
           <td>${new Date(round.crashedAt).toLocaleString("zh-CN")}</td>
+          <td>${round.humanCount || 0} 真人 / ${round.botCount || 0} 机器人</td>
           <td>${formatMultiplier(round.crashMultiplier)}</td>
           <td>${formatMoney(round.totalBet)}</td>
           <td>${formatMoney(round.totalPayout)}</td>

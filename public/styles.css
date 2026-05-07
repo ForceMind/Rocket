@@ -140,7 +140,7 @@ a {
 
 .game-layout {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) 230px;
+  grid-template-columns: 170px minmax(0, 1fr) 210px;
   grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   min-height: 0;
@@ -383,7 +383,7 @@ body:not(.admin-body) .game-layout {
   min-height: 0;
   flex-direction: column;
   align-self: stretch;
-  padding: 16px;
+  padding: 12px;
 }
 
 .bet-form,
@@ -758,24 +758,8 @@ td small {
 }
 
 @media (max-width: 1024px) {
-  .game-layout,
   .admin-layout {
     grid-template-columns: 1fr;
-  }
-
-  .stage-panel,
-  .bet-panel,
-  .table-panel {
-    grid-column: 1;
-    grid-row: auto;
-  }
-
-  .bet-panel {
-    order: 2;
-  }
-
-  .table-panel {
-    order: 3;
   }
 
   .metric-grid,
