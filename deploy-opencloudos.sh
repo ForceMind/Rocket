@@ -15,7 +15,35 @@ HTTPS_KEY_PATH="${HTTPS_KEY_PATH:-${SSL_KEY_PATH:-${TLS_KEY_PATH:-}}}"
 HTTPS_CERT_PATH="${HTTPS_CERT_PATH:-${SSL_CERT_PATH:-${TLS_CERT_PATH:-}}}"
 HTTPS_CA_PATH="${HTTPS_CA_PATH:-${SSL_CA_PATH:-${TLS_CA_PATH:-}}}"
 PUBLIC_WS_URL="${PUBLIC_WS_URL:-${WS_URL:-}}"
+PUBLIC_WS_HOST="${PUBLIC_WS_HOST:-}"
+PUBLIC_WS_SCHEME="${PUBLIC_WS_SCHEME:-wss}"
+PUBLIC_WS_PATH="${PUBLIC_WS_PATH:-/ws}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+build_public_ws_url() {
+  local host="$1"
+  local scheme="${2:-wss}"
+  local route="${3:-/ws}"
+  if [[ -z "$host" ]]; then
+    return 0
+  fi
+  if [[ "$host" =~ ^wss?:// ]]; then
+    echo "$host"
+    return 0
+  fi
+  if [[ "$route" != /* ]]; then
+    route="/${route}"
+  fi
+  if [[ "$host" == */* ]]; then
+    echo "${scheme}://${host}"
+  else
+    echo "${scheme}://${host}${route}"
+  fi
+}
+
+if [[ -z "$PUBLIC_WS_URL" && -n "$PUBLIC_WS_HOST" ]]; then
+  PUBLIC_WS_URL="$(build_public_ws_url "$PUBLIC_WS_HOST" "$PUBLIC_WS_SCHEME" "$PUBLIC_WS_PATH")"
+fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy-opencloudos.sh" >&2
@@ -135,6 +163,9 @@ Environment=HTTPS_KEY_PATH=${HTTPS_KEY_PATH}
 Environment=HTTPS_CERT_PATH=${HTTPS_CERT_PATH}
 Environment=HTTPS_CA_PATH=${HTTPS_CA_PATH}
 Environment=PUBLIC_WS_URL=${PUBLIC_WS_URL}
+Environment=PUBLIC_WS_HOST=${PUBLIC_WS_HOST}
+Environment=PUBLIC_WS_SCHEME=${PUBLIC_WS_SCHEME}
+Environment=PUBLIC_WS_PATH=${PUBLIC_WS_PATH}
 ExecStart=${APP_DIR}/start-linux.sh
 Restart=always
 RestartSec=3

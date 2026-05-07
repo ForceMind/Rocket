@@ -98,6 +98,16 @@ sudo PUBLIC_HOST=rocket.example.com \
   bash deploy-opencloudos.sh
 ```
 
+如果页面域名和 WebSocket 域名分开，例如页面是 `rocket.xincreates.com`，WebSocket 是 `rocket-api.xincreates.com/ws`，可以这样部署：
+
+```bash
+sudo PUBLIC_HOST=rocket.xincreates.com \
+  PUBLIC_WS_HOST=rocket-api.xincreates.com \
+  bash deploy-opencloudos.sh
+```
+
+脚本会自动生成 `PUBLIC_WS_URL=wss://rocket-api.xincreates.com/ws`，服务端通过 `settings.publicWsUrl` 下发给玩家端。
+
 默认端口范围：
 
 ```text

@@ -338,7 +338,22 @@ sudo PUBLIC_HOST=rocket.example.com \
   bash deploy-opencloudos.sh
 ```
 
-服务端会通过 `settings.publicWsUrl` 下发给前端，前端优先使用这个地址。
+如果页面和 WebSocket 使用不同 Cloudflare Public Hostname，例如：
+
+```text
+页面: https://rocket.xincreates.com
+WS  : wss://rocket-api.xincreates.com/ws
+```
+
+可以用简写参数部署：
+
+```bash
+sudo PUBLIC_HOST=rocket.xincreates.com \
+  PUBLIC_WS_HOST=rocket-api.xincreates.com \
+  bash deploy-opencloudos.sh
+```
+
+脚本会自动生成 `PUBLIC_WS_URL=wss://rocket-api.xincreates.com/ws`。服务端会通过 `settings.publicWsUrl` 下发给前端，前端优先使用这个地址。
 
 推荐 `cloudflared` ingress：
 
