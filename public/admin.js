@@ -9,11 +9,14 @@ const ui = {
   metricBet: $("#metricBet"),
   metricPayout: $("#metricPayout"),
   metricProfit: $("#metricProfit"),
+  metricPrizePool: $("#metricPrizePool"),
+  metricCurrentBotBet: $("#metricCurrentBotBet"),
   metricLiability: $("#metricLiability"),
   adminRoundPhase: $("#adminRoundPhase"),
   adminRoundId: $("#adminRoundId"),
   adminCurrentMultiplier: $("#adminCurrentMultiplier"),
   adminCrashMultiplier: $("#adminCrashMultiplier"),
+  adminPoolCap: $("#adminPoolCap"),
   adminSeedHash: $("#adminSeedHash"),
   forceForm: $("#forceForm"),
   forceMultiplier: $("#forceMultiplier"),
@@ -52,13 +55,13 @@ function escapeHtml(value) {
 }
 
 async function adminApi(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
   const response = await fetch(path, {
     method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(options.headers || {})
-    },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
@@ -95,6 +98,8 @@ async function refresh() {
     return true;
   } catch (error) {
     console.error(error);
+    ui.status.textContent = "加载失败";
+    ui.status.classList.remove("online");
     return false;
   }
 }
@@ -119,6 +124,8 @@ function renderMetrics() {
   ui.metricPayout.textContent = formatMoney(metrics.totalPayout);
   ui.metricProfit.textContent = formatMoney(metrics.houseProfit);
   ui.metricProfit.style.color = Number(metrics.houseProfit || 0) >= 0 ? "var(--green)" : "var(--red)";
+  ui.metricPrizePool.textContent = formatMoney(metrics.prizePool);
+  ui.metricCurrentBotBet.textContent = formatMoney(metrics.currentBotBet);
   ui.metricLiability.textContent = formatMoney(metrics.playerLiability);
 }
 
@@ -128,6 +135,7 @@ function renderRound() {
   ui.adminRoundId.value = round?.id || "-";
   ui.adminCurrentMultiplier.value = formatMultiplier(round?.currentMultiplier || 1);
   ui.adminCrashMultiplier.value = round?.crashMultiplier ? formatMultiplier(round.crashMultiplier) : "-";
+  ui.adminPoolCap.value = round?.poolCapMultiplier ? formatMultiplier(round.poolCapMultiplier) : "-";
   ui.adminSeedHash.value = round?.seedHash || "-";
   ui.pauseButton.textContent = state?.settings?.paused ? "恢复" : "暂停";
 }

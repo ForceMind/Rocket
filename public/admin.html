@@ -18,7 +18,7 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <span id="adminStatus" class="status-pill">未登录</span>
+          <span id="adminStatus" class="status-pill">加载中</span>
           <button id="refreshButton" class="ghost-button" type="button">刷新</button>
           <a class="ghost-link" href="/">玩家端</a>
         </div>
@@ -31,10 +31,12 @@
           <div class="metric"><span>总下注</span><strong id="metricBet">0.00</strong></div>
           <div class="metric"><span>总返还</span><strong id="metricPayout">0.00</strong></div>
           <div class="metric"><span>平台盈亏</span><strong id="metricProfit">0.00</strong></div>
+          <div class="metric"><span>奖池余额</span><strong id="metricPrizePool">0.00</strong></div>
+          <div class="metric"><span>本局机器人下注</span><strong id="metricCurrentBotBet">0.00</strong></div>
           <div class="metric"><span>玩家余额</span><strong id="metricLiability">0.00</strong></div>
         </section>
         <section class="admin-panel wide compact-help">
-          <p class="section-help">顶部指标用于本地观察整体运营状态：总下注和总返还是历史回合累计，平台盈亏等于总下注减总返还，玩家余额是所有真实玩家当前积分合计。</p>
+          <p class="section-help">顶部指标用于本地观察整体运营状态：总下注和总返还包含历史回合和当前局，机器人下注也计入平台盈亏；奖池余额用于限制真实玩家局的最大可赔付爆点。</p>
         </section>
 
         <section class="admin-panel wide">
@@ -55,6 +57,10 @@
             <label>
               <span>爆点</span>
               <input id="adminCrashMultiplier" readonly />
+            </label>
+            <label>
+              <span>奖池承受上限</span>
+              <input id="adminPoolCap" readonly />
             </label>
             <label>
               <span>Hash</span>
@@ -84,7 +90,9 @@
             <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /><small>玩家端实时状态刷新间隔，数值越小越顺滑。</small></label>
             <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /><small>真实玩家每局最低下注积分。</small></label>
             <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /><small>真实玩家每局最高下注积分。</small></label>
+            <label><span>下注档位</span><input name="betTiers" type="text" /><small>前台筹码档位，用逗号分隔，例如 10,50,100,500。</small></label>
             <label><span>初始积分</span><input name="demoCredit" type="number" step="0.01" /><small>新玩家第一次进入时获得的演示积分。</small></label>
+            <label><span>奖池余额</span><input name="prizePool" type="number" step="0.01" /><small>真实玩家下注会进入奖池，提现返还会从奖池扣除。</small></label>
             <label><span>House edge bps</span><input name="houseEdgeBps" type="number" /><small>平台优势，100 bps 等于 1%。</small></label>
             <label><span>1.00 爆炸 bps</span><input name="instantCrashBps" type="number" /><small>火箭刚起飞就 1.00x 爆炸的概率，100 bps 等于 1%。</small></label>
             <label><span>最大倍率</span><input name="maxCrashMultiplier" type="number" /><small>随机爆点不会超过这个上限。</small></label>

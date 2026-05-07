@@ -9,6 +9,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
+const CURVE_SPEED_MS = 6500;
 
 const DEFAULT_SETTINGS = {
   bettingDurationMs: 7000,
@@ -16,7 +17,9 @@ const DEFAULT_SETTINGS = {
   tickRateMs: 100,
   minBetCents: 100,
   maxBetCents: 100000,
+  betTiersCents: [1000, 5000, 10000, 50000],
   demoCreditCents: 100000,
+  prizePoolCents: 10000000,
   houseEdgeBps: 150,
   instantCrashBps: 150,
   maxCrashMultiplier: 100,
@@ -53,7 +56,6 @@ const MIME_TYPES = {
 let db = loadDb();
 let currentRound = null;
 let clients = new Set();
-let lastBroadcastAt = 0;
 
 function nowIso() {
   return new Date().toISOString();
@@ -144,6 +146,18 @@ function amountToCents(value) {
     return null;
   }
   return Math.round(number * 100);
+}
+
+function parseAmountList(value) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || "")
+      .split(/[,\s，]+/)
+      .filter(Boolean);
+  const cents = rawItems
+    .map(amountToCents)
+    .filter((item) => Number.isInteger(item) && item > 0);
+  return [...new Set(cents)].sort((a, b) => a - b);
 }
 
 function publicPlayer(player) {
@@ -273,6 +287,41 @@ function hasHumanBet(round) {
   return round.bets.some((bet) => !bet.isBot);
 }
 
+function humanOpenBetCents(round = currentRound) {
+  if (!round) return 0;
+  return round.bets.reduce((sum, bet) => {
+    if (bet.isBot || bet.status !== "open") return sum;
+    return sum + bet.amountCents;
+  }, 0);
+}
+
+function prizePoolCapMultiplier(round = currentRound, prizePoolCents = db.settings.prizePoolCents) {
+  const openBetCents = humanOpenBetCents(round);
+  if (openBetCents <= 0) return db.settings.maxCrashMultiplier;
+  const cap = Math.floor((prizePoolCents / openBetCents) * 100) / 100;
+  return Number(clamp(cap, 1, db.settings.maxCrashMultiplier).toFixed(2));
+}
+
+function projectedPrizePoolCap(extraBetCents) {
+  const projectedPool = db.settings.prizePoolCents + extraBetCents;
+  const projectedOpenBets = humanOpenBetCents() + extraBetCents;
+  if (projectedOpenBets <= 0) return db.settings.maxCrashMultiplier;
+  return Math.floor((projectedPool / projectedOpenBets) * 100) / 100;
+}
+
+function applyPrizePoolCap(reason = "pool") {
+  if (!currentRound || currentRound.phase !== "betting") return false;
+  const cap = prizePoolCapMultiplier(currentRound);
+  currentRound.poolCapMultiplier = cap;
+  if (humanOpenBetCents(currentRound) <= 0 || currentRound.crashMultiplier <= cap) {
+    return false;
+  }
+  currentRound.crashMultiplier = Number(cap.toFixed(2));
+  currentRound.poolCapped = true;
+  currentRound.poolCapReason = reason;
+  return true;
+}
+
 function applyBotOnlyHighFlight() {
   if (!currentRound || currentRound.botOnlyHighFlightChecked) return false;
   currentRound.botOnlyHighFlightChecked = true;
@@ -335,6 +384,10 @@ function placeDueBotBets(timestamp) {
       placedAt: nowIso(),
       settledAt: null
     });
+    broadcastEvent("bet_placed", {
+      roundId: currentRound.id,
+      bet: publicBet(currentRound.bets[currentRound.bets.length - 1])
+    });
     changed = true;
   }
   return changed;
@@ -345,7 +398,7 @@ function multiplierAt(timestamp = Date.now()) {
     return 1;
   }
   const elapsed = Math.max(0, timestamp - currentRound.launchAt);
-  const raw = Math.exp(elapsed / 6500);
+  const raw = Math.exp(elapsed / CURVE_SPEED_MS);
   const cap = Math.max(db.settings.maxCrashMultiplier, currentRound.crashMultiplier || 1);
   const capped = clamp(raw, 1, cap);
   return Math.floor(capped * 100) / 100;
@@ -378,11 +431,14 @@ function createRound() {
     forced: false,
     botOnlyHighFlight: false,
     botOnlyHighFlightChecked: false,
+    poolCapped: false,
+    poolCapMultiplier: db.settings.maxCrashMultiplier,
+    poolCapReason: null,
     bets: [],
     botPlan: createBotPlan(createdAt)
   };
   saveDb();
-  broadcastState(true);
+  broadcastEvent("round_start", { round: publicRound(), settings: publicSettings() });
 }
 
 function startFlying() {
@@ -391,7 +447,10 @@ function startFlying() {
   currentRound.phase = "flying";
   currentRound.launchAt = Date.now();
   currentRound.currentMultiplier = 1;
-  broadcastState(true);
+  broadcastEvent("flight_start", {
+    round: publicRound(),
+    curve: { type: "exp", speedMs: CURVE_SPEED_MS }
+  });
 }
 
 function settleOpenBetsAsLost() {
@@ -425,6 +484,8 @@ function finishRound() {
     crashMultiplier: currentRound.crashMultiplier,
     forced: currentRound.forced,
     botOnlyHighFlight: currentRound.botOnlyHighFlight,
+    poolCapped: currentRound.poolCapped,
+    poolCapMultiplier: currentRound.poolCapMultiplier,
     startedAt: new Date(currentRound.createdAt).toISOString(),
     crashedAt: new Date(crashedAt).toISOString(),
     totalBet: centsToAmount(totalBetCents),
@@ -441,7 +502,11 @@ function finishRound() {
     forced: currentRound.forced
   });
   saveDb();
-  broadcastState(true);
+  broadcastEvent("crash", {
+    round: publicRound(),
+    history: db.rounds.slice(0, 24),
+    settings: publicSettings()
+  });
 }
 
 function processAutoCashouts(currentMultiplier) {
@@ -450,8 +515,11 @@ function processAutoCashouts(currentMultiplier) {
   for (const bet of currentRound.bets) {
     if (bet.status !== "open" || !bet.autoCashout) continue;
     if (bet.autoCashout < currentRound.crashMultiplier && currentMultiplier >= bet.autoCashout) {
-      cashoutBet(bet, bet.autoCashout, "auto");
-      changed = true;
+      const settled = cashoutBet(bet, bet.autoCashout, "auto");
+      if (settled) {
+        emitCashout(settled);
+        changed = true;
+      }
     }
   }
   return changed;
@@ -464,6 +532,10 @@ function cashoutBet(bet, multiplier, mode) {
   const safeMultiplier = Number(clamp(multiplier, 1, db.settings.maxCrashMultiplier).toFixed(2));
   const payoutCents = Math.floor((bet.amountCents * Math.round(safeMultiplier * 100)) / 100);
 
+  if (player && payoutCents > db.settings.prizePoolCents) {
+    return null;
+  }
+
   bet.status = "cashed";
   bet.cashoutMode = mode;
   bet.cashoutMultiplier = safeMultiplier;
@@ -471,10 +543,22 @@ function cashoutBet(bet, multiplier, mode) {
   bet.settledAt = nowIso();
 
   if (player) {
+    db.settings.prizePoolCents -= payoutCents;
     player.balanceCents += payoutCents;
     player.updatedAt = nowIso();
   }
   return bet;
+}
+
+function emitCashout(bet) {
+  const player = db.players[bet.playerId];
+  broadcastEvent("cashout", {
+    roundId: bet.roundId,
+    bet: publicBet(bet)
+  });
+  if (player) {
+    sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
+  }
 }
 
 function tick() {
@@ -492,7 +576,6 @@ function tick() {
     const changed = placeDueBotBets(timestamp);
     if (changed) {
       saveDb();
-      broadcastState(true);
     }
   }
 
@@ -505,7 +588,6 @@ function tick() {
       const changed = processAutoCashouts(currentMultiplier);
       if (changed) {
         saveDb();
-        broadcastState(true);
       }
     }
   }
@@ -513,11 +595,6 @@ function tick() {
   if (currentRound.phase === "crashed" && timestamp >= currentRound.nextRoundAt) {
     currentRound = null;
     createRound();
-  }
-
-  if (timestamp - lastBroadcastAt >= db.settings.tickRateMs) {
-    broadcastState();
-    lastBroadcastAt = timestamp;
   }
 }
 
@@ -552,6 +629,8 @@ function publicRound(round = currentRound) {
     nextRoundAt: round.nextRoundAt,
     forced: round.forced,
     botOnlyHighFlight: round.botOnlyHighFlight,
+    poolCapped: Boolean(round.poolCapped),
+    poolCapMultiplier: round.poolCapMultiplier,
     bets: round.bets.map(publicBet)
   };
   if (round.phase === "crashed") {
@@ -574,17 +653,38 @@ function adminRound(round = currentRound) {
 function publicSnapshot(playerId) {
   return {
     now: Date.now(),
-    settings: {
-      minBet: centsToAmount(db.settings.minBetCents),
-      maxBet: centsToAmount(db.settings.maxBetCents),
-      bettingDurationMs: db.settings.bettingDurationMs,
-      roundPauseMs: db.settings.roundPauseMs,
-      paused: db.settings.paused
-    },
+    settings: publicSettings(),
     player: playerId && db.players[playerId] ? publicPlayer(db.players[playerId]) : null,
     round: publicRound(),
     history: db.rounds.slice(0, 24)
   };
+}
+
+function roundMoneyTotals(round) {
+  const empty = {
+    totalBet: 0,
+    totalPayout: 0,
+    houseProfit: 0,
+    botBet: 0,
+    botPayout: 0,
+    humanBet: 0,
+    humanPayout: 0
+  };
+  if (!round?.bets) return empty;
+  return round.bets.reduce((acc, bet) => {
+    const payout = bet.payoutCents || 0;
+    acc.totalBet += bet.amountCents || 0;
+    acc.totalPayout += payout;
+    if (bet.isBot) {
+      acc.botBet += bet.amountCents || 0;
+      acc.botPayout += payout;
+    } else {
+      acc.humanBet += bet.amountCents || 0;
+      acc.humanPayout += payout;
+    }
+    acc.houseProfit = acc.totalBet - acc.totalPayout;
+    return acc;
+  }, empty);
 }
 
 function adminSnapshot() {
@@ -597,6 +697,12 @@ function adminSnapshot() {
     },
     { totalBet: 0, totalPayout: 0, houseProfit: 0 }
   );
+  const liveTotals = roundMoneyTotals(currentRound);
+  const combinedTotals = {
+    totalBet: totals.totalBet + liveTotals.totalBet,
+    totalPayout: totals.totalPayout + liveTotals.totalPayout,
+    houseProfit: totals.houseProfit + liveTotals.houseProfit
+  };
   const playerList = Object.values(db.players).sort((a, b) => b.balanceCents - a.balanceCents);
   const onlinePlayerIds = new Set([...clients].map((client) => client.playerId).filter(Boolean));
 
@@ -606,7 +712,9 @@ function adminSnapshot() {
       ...db.settings,
       minBet: centsToAmount(db.settings.minBetCents),
       maxBet: centsToAmount(db.settings.maxBetCents),
+      betTiers: db.settings.betTiersCents.map(centsToAmount).join(", "),
       demoCredit: centsToAmount(db.settings.demoCreditCents),
+      prizePool: centsToAmount(db.settings.prizePoolCents),
       botMinBet: centsToAmount(db.settings.botMinBetCents),
       botMaxBet: centsToAmount(db.settings.botMaxBetCents)
     },
@@ -614,9 +722,16 @@ function adminSnapshot() {
       players: playerList.length,
       onlinePlayers: onlinePlayerIds.size,
       rounds: db.rounds.length,
-      totalBet: centsToAmount(totals.totalBet),
-      totalPayout: centsToAmount(totals.totalPayout),
-      houseProfit: centsToAmount(totals.houseProfit),
+      totalBet: centsToAmount(combinedTotals.totalBet),
+      totalPayout: centsToAmount(combinedTotals.totalPayout),
+      houseProfit: centsToAmount(combinedTotals.houseProfit),
+      currentBet: centsToAmount(liveTotals.totalBet),
+      currentPayout: centsToAmount(liveTotals.totalPayout),
+      currentHouseProfit: centsToAmount(liveTotals.houseProfit),
+      currentBotBet: centsToAmount(liveTotals.botBet),
+      currentHumanBet: centsToAmount(liveTotals.humanBet),
+      prizePool: centsToAmount(db.settings.prizePoolCents),
+      poolCapMultiplier: prizePoolCapMultiplier(currentRound),
       playerLiability: centsToAmount(playerList.reduce((sum, player) => sum + player.balanceCents, 0))
     },
     round: adminRound(),
@@ -624,41 +739,6 @@ function adminSnapshot() {
     rounds: db.rounds.slice(0, 80),
     audit: db.audit.slice(0, 80)
   };
-}
-
-function sendEvent(client, event, data) {
-  try {
-    client.res.write(`event: ${event}\n`);
-    client.res.write(`data: ${JSON.stringify(data)}\n\n`);
-  } catch {
-    clients.delete(client);
-  }
-}
-
-function broadcastState(force = false) {
-  if (!force && clients.size === 0) return;
-  for (const client of clients) {
-    sendEvent(client, "state", publicSnapshot(client.playerId));
-  }
-}
-
-function handleEvents(req, res, url) {
-  const playerId = url.searchParams.get("playerId") || "";
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no"
-  });
-  res.write(": connected\n\n");
-
-  const client = { res, playerId };
-  clients.add(client);
-  sendEvent(client, "state", publicSnapshot(playerId));
-
-  req.on("close", () => {
-    clients.delete(client);
-  });
 }
 
 function httpError(statusCode, message) {
@@ -673,6 +753,107 @@ function sendJson(res, statusCode, payload) {
     "Cache-Control": "no-store"
   });
   res.end(JSON.stringify(payload));
+}
+
+function wsFrame(payload) {
+  const data = Buffer.from(payload);
+  if (data.length < 126) {
+    return Buffer.concat([Buffer.from([0x81, data.length]), data]);
+  }
+  if (data.length < 65536) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x81;
+    header[1] = 126;
+    header.writeUInt16BE(data.length, 2);
+    return Buffer.concat([header, data]);
+  }
+  const header = Buffer.alloc(10);
+  header[0] = 0x81;
+  header[1] = 127;
+  header.writeBigUInt64BE(BigInt(data.length), 2);
+  return Buffer.concat([header, data]);
+}
+
+function wsSend(client, type, data = {}) {
+  if (!client || client.socket.destroyed) {
+    clients.delete(client);
+    return;
+  }
+  try {
+    client.socket.write(wsFrame(JSON.stringify({ type, serverTime: Date.now(), data })));
+  } catch {
+    clients.delete(client);
+  }
+}
+
+function broadcastEvent(type, data = {}) {
+  for (const client of clients) {
+    wsSend(client, type, data);
+  }
+}
+
+function sendPlayerEvent(playerId, type, data = {}) {
+  for (const client of clients) {
+    if (client.playerId === playerId) {
+      wsSend(client, type, data);
+    }
+  }
+}
+
+function publicSettings() {
+  return {
+    minBet: centsToAmount(db.settings.minBetCents),
+    maxBet: centsToAmount(db.settings.maxBetCents),
+    betTiers: db.settings.betTiersCents.map(centsToAmount),
+    bettingDurationMs: db.settings.bettingDurationMs,
+    roundPauseMs: db.settings.roundPauseMs,
+    paused: db.settings.paused,
+    curveSpeedMs: CURVE_SPEED_MS
+  };
+}
+
+function handleWsUpgrade(req, socket) {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (url.pathname !== "/ws") {
+    socket.destroy();
+    return;
+  }
+
+  const key = req.headers["sec-websocket-key"];
+  if (!key) {
+    socket.destroy();
+    return;
+  }
+
+  const accept = crypto
+    .createHash("sha1")
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest("base64");
+
+  socket.write([
+    "HTTP/1.1 101 Switching Protocols",
+    "Upgrade: websocket",
+    "Connection: Upgrade",
+    `Sec-WebSocket-Accept: ${accept}`,
+    "",
+    ""
+  ].join("\r\n"));
+
+  const client = {
+    socket,
+    playerId: url.searchParams.get("playerId") || ""
+  };
+  clients.add(client);
+  wsSend(client, "snapshot", publicSnapshot(client.playerId));
+
+  socket.on("data", (buffer) => {
+    if ((buffer[0] & 0x0f) === 0x8) {
+      clients.delete(client);
+      socket.end();
+    }
+  });
+  socket.on("close", () => clients.delete(client));
+  socket.on("error", () => clients.delete(client));
 }
 
 function readJson(req) {
@@ -732,6 +913,10 @@ async function handleApi(req, res, url) {
     if (amountCents > player.balanceCents) {
       throw httpError(400, "Insufficient balance");
     }
+    const projectedCap = projectedPrizePoolCap(amountCents);
+    if (projectedCap < 1.01) {
+      throw httpError(400, "Prize pool cannot cover the minimum payout for this bet");
+    }
     if (currentRound.bets.some((bet) => bet.playerId === player.id)) {
       throw httpError(409, "You already placed a bet this round");
     }
@@ -740,6 +925,7 @@ async function handleApi(req, res, url) {
     }
 
     player.balanceCents -= amountCents;
+    db.settings.prizePoolCents += amountCents;
     player.updatedAt = nowIso();
     const bet = {
       id: newId("bet"),
@@ -756,9 +942,11 @@ async function handleApi(req, res, url) {
       settledAt: null
     };
     currentRound.bets.push(bet);
+    applyPrizePoolCap("human-bet");
     audit("bet.placed", { playerId: player.id, roundId: currentRound.id, amountCents });
     saveDb();
-    broadcastState(true);
+    broadcastEvent("bet_placed", { roundId: currentRound.id, bet: publicBet(bet) });
+    sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
     return sendJson(res, 200, { bet: publicBet(bet), player: publicPlayer(player), state: publicSnapshot(player.id) });
   }
 
@@ -777,7 +965,10 @@ async function handleApi(req, res, url) {
       finishRound();
       throw httpError(409, "The rocket has already crashed");
     }
-    cashoutBet(bet, currentMultiplier, "manual");
+    const settled = cashoutBet(bet, currentMultiplier, "manual");
+    if (!settled) {
+      throw httpError(409, "Prize pool cannot cover this payout");
+    }
     audit("bet.cashout", {
       playerId: player.id,
       roundId: currentRound.id,
@@ -785,7 +976,7 @@ async function handleApi(req, res, url) {
       payoutCents: bet.payoutCents
     });
     saveDb();
-    broadcastState(true);
+    emitCashout(settled);
     return sendJson(res, 200, { bet: publicBet(bet), player: publicPlayer(player), state: publicSnapshot(player.id) });
   }
 
@@ -837,10 +1028,21 @@ async function handleApi(req, res, url) {
       if (!Number.isInteger(cents) || cents < db.settings.minBetCents) throw httpError(400, "最大下注无效");
       db.settings.maxBetCents = cents;
     }
+    if (body.betTiers !== undefined) {
+      const tiers = parseAmountList(body.betTiers).filter((cents) => cents <= db.settings.maxBetCents);
+      if (tiers.length === 0) throw httpError(400, "下注档位无效");
+      db.settings.betTiersCents = tiers;
+    }
     if (body.demoCredit !== undefined) {
       const cents = amountToCents(body.demoCredit);
       if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "初始积分无效");
       db.settings.demoCreditCents = cents;
+    }
+    if (body.prizePool !== undefined) {
+      const cents = amountToCents(body.prizePool);
+      if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "奖池余额无效");
+      db.settings.prizePoolCents = cents;
+      applyPrizePoolCap("admin-prize-pool");
     }
     if (body.botMinBet !== undefined) {
       const cents = amountToCents(body.botMinBet);
@@ -861,6 +1063,12 @@ async function handleApi(req, res, url) {
     if (db.settings.minBetCents > db.settings.maxBetCents) {
       throw httpError(400, "最小下注不能大于最大下注");
     }
+    db.settings.betTiersCents = (db.settings.betTiersCents || [])
+      .filter((cents) => Number.isInteger(cents) && cents >= db.settings.minBetCents && cents <= db.settings.maxBetCents)
+      .sort((a, b) => a - b);
+    if (db.settings.betTiersCents.length === 0) {
+      db.settings.betTiersCents = [db.settings.minBetCents, db.settings.maxBetCents];
+    }
     if (body.paused !== undefined) {
       db.settings.paused = Boolean(body.paused);
     }
@@ -868,7 +1076,7 @@ async function handleApi(req, res, url) {
     audit("admin.settings", { previous, next: db.settings });
     saveDb();
     if (!currentRound && !db.settings.paused) createRound();
-    broadcastState(true);
+    broadcastEvent("settings_updated", { settings: publicSettings() });
     return sendJson(res, 200, adminSnapshot());
   }
 
@@ -887,7 +1095,7 @@ async function handleApi(req, res, url) {
     player.updatedAt = nowIso();
     audit("admin.player-credit", { playerId: player.id, deltaCents, nextBalance });
     saveDb();
-    broadcastState(true);
+    sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
     return sendJson(res, 200, adminSnapshot());
   }
 
@@ -898,8 +1106,11 @@ async function handleApi(req, res, url) {
     }
     const requested = body.multiplier === undefined || body.multiplier === "" ? null : Number(body.multiplier);
     const currentMultiplier = currentRound.phase === "flying" ? multiplierAt() : 1;
+    const maxAllowed = humanOpenBetCents(currentRound) > 0
+      ? Math.min(db.settings.maxCrashMultiplier, prizePoolCapMultiplier(currentRound))
+      : db.settings.maxCrashMultiplier;
     const nextCrash = requested
-      ? clamp(Number(requested.toFixed(2)), currentMultiplier, db.settings.maxCrashMultiplier)
+      ? clamp(Number(requested.toFixed(2)), currentMultiplier, maxAllowed)
       : currentMultiplier;
     currentRound.crashMultiplier = Number(nextCrash.toFixed(2));
     currentRound.forced = true;
@@ -909,7 +1120,6 @@ async function handleApi(req, res, url) {
     }
     finishRound();
     saveDb();
-    broadcastState(true);
     return sendJson(res, 200, adminSnapshot());
   }
 
@@ -919,7 +1129,7 @@ async function handleApi(req, res, url) {
     audit("admin.pause", { paused: db.settings.paused });
     saveDb();
     if (!currentRound && !db.settings.paused) createRound();
-    broadcastState(true);
+    broadcastEvent("settings_updated", { settings: publicSettings() });
     return sendJson(res, 200, adminSnapshot());
   }
 
@@ -957,7 +1167,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   try {
     if (req.method === "GET" && url.pathname === "/events") {
-      return handleEvents(req, res, url);
+      return sendJson(res, 410, { error: "SSE is disabled. Use /ws WebSocket events." });
     }
     if (req.method === "GET" && url.pathname === "/favicon.ico") {
       res.writeHead(302, { Location: "/favicon.svg" });
@@ -979,6 +1189,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, statusCode, { error: error.message || "服务器错误" });
   }
 });
+
+server.on("upgrade", handleWsUpgrade);
 
 setInterval(tick, 50);
 createRound();

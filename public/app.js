@@ -18,6 +18,7 @@ const ui = {
   history: $("#history"),
   betForm: $("#betForm"),
   amountInput: $("#amountInput"),
+  chipRow: $("#chipRow"),
   autoToggle: $("#autoToggle"),
   autoInput: $("#autoInput"),
   placeBetButton: $("#placeBetButton"),
@@ -37,6 +38,8 @@ let messageTimer = null;
 let lastDrawAt = 0;
 let trackedRoundId = null;
 let betStatusById = new Map();
+let renderedChipSignature = "";
+let serverTimeOffset = 0;
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("zh-CN", {
@@ -47,6 +50,21 @@ function formatMoney(value) {
 
 function formatMultiplier(value) {
   return `${Number(value || 1).toFixed(2)}x`;
+}
+
+function serverNow() {
+  return Date.now() + serverTimeOffset;
+}
+
+function displayMultiplier(round = snapshot?.round) {
+  if (!round) return 1;
+  if (round.phase !== "flying" || !round.launchAt) {
+    return Number(round.currentMultiplier || round.crashMultiplier || 1);
+  }
+  const speedMs = round.curveSpeedMs || snapshot?.settings?.curveSpeedMs || 6500;
+  const elapsed = Math.max(0, serverNow() - round.launchAt);
+  const raw = Math.exp(elapsed / speedMs);
+  return Math.floor(raw * 100) / 100;
 }
 
 function showMessage(text, isError = false) {
@@ -111,19 +129,70 @@ function connectEvents() {
 
   ui.connectionStatus.textContent = "Connecting";
   ui.connectionStatus.classList.remove("online");
-  source = new EventSource(`/events?playerId=${encodeURIComponent(session.playerId)}`);
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  source = new WebSocket(`${protocol}//${location.host}/ws?playerId=${encodeURIComponent(session.playerId)}`);
   source.addEventListener("open", () => {
     ui.connectionStatus.textContent = "Online";
     ui.connectionStatus.classList.add("online");
   });
-  source.addEventListener("state", (event) => {
-    snapshot = JSON.parse(event.data);
-    render();
+  source.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.serverTime) {
+      serverTimeOffset = message.serverTime - Date.now();
+    }
+    handleRealtimeEvent(message.type, message.data || {});
+  });
+  source.addEventListener("close", () => {
+    ui.connectionStatus.textContent = "Reconnecting";
+    ui.connectionStatus.classList.remove("online");
+    setTimeout(connectEvents, 1200);
   });
   source.addEventListener("error", () => {
     ui.connectionStatus.textContent = "Reconnecting";
     ui.connectionStatus.classList.remove("online");
+    source.close();
   });
+}
+
+function handleRealtimeEvent(type, data) {
+  if (type === "snapshot") {
+    snapshot = data;
+  } else {
+    if (!snapshot) snapshot = { history: [], settings: {}, round: null, player: null };
+  }
+
+  if (type === "round_start") {
+    snapshot.round = data.round;
+    if (data.settings) snapshot.settings = data.settings;
+  } else if (type === "flight_start") {
+    snapshot.round = data.round;
+    snapshot.round.curveSpeedMs = data.curve?.speedMs || snapshot.settings?.curveSpeedMs || 6500;
+  } else if (type === "bet_placed") {
+    upsertBet(data.bet);
+  } else if (type === "cashout") {
+    upsertBet(data.bet);
+  } else if (type === "crash") {
+    snapshot.round = data.round;
+    if (data.history) snapshot.history = data.history;
+    if (data.settings) snapshot.settings = data.settings;
+  } else if (type === "settings_updated") {
+    snapshot.settings = data.settings;
+  } else if (type === "player_update" && data.player) {
+    snapshot.player = data.player;
+  }
+  render();
+}
+
+function upsertBet(bet) {
+  if (!snapshot?.round || !bet || bet.roundId !== snapshot.round.id) return;
+  const bets = snapshot.round.bets || [];
+  const index = bets.findIndex((item) => item.id === bet.id);
+  if (index >= 0) {
+    bets[index] = bet;
+  } else {
+    bets.push(bet);
+  }
+  snapshot.round.bets = bets;
 }
 
 function getMyBet() {
@@ -143,11 +212,11 @@ function renderClock(round) {
     ui.clockLabel.textContent = "--";
     return;
   }
-  const now = Date.now();
+  const currentTime = serverNow();
   if (round.phase === "betting") {
-    ui.clockLabel.textContent = `${Math.max(0, Math.ceil((round.bettingEndsAt - now) / 1000))}s`;
+    ui.clockLabel.textContent = `${Math.max(0, Math.ceil((round.bettingEndsAt - currentTime) / 1000))}s`;
   } else if (round.phase === "crashed") {
-    ui.clockLabel.textContent = `${Math.max(0, Math.ceil((round.nextRoundAt - now) / 1000))}s`;
+    ui.clockLabel.textContent = `${Math.max(0, Math.ceil((round.nextRoundAt - currentTime) / 1000))}s`;
   } else {
     ui.clockLabel.textContent = "LIVE";
   }
@@ -224,10 +293,22 @@ function renderActions() {
   ui.cashoutButton.disabled = !canCashout;
   ui.cashoutButton.classList.toggle("visible", myBet?.status === "open");
   if (myBet?.status === "open" && round?.phase === "flying") {
-    ui.cashoutButton.textContent = `Cash Out ${formatMultiplier(round.currentMultiplier)}`;
+    ui.cashoutButton.textContent = `Cash Out ${formatMultiplier(displayMultiplier(round))}`;
   } else {
     ui.cashoutButton.textContent = "Cash Out";
   }
+}
+
+function renderChips() {
+  const tiers = snapshot?.settings?.betTiers?.length
+    ? snapshot.settings.betTiers
+    : [10, 50, 100, 500];
+  const signature = tiers.join("|");
+  if (signature === renderedChipSignature) return;
+  renderedChipSignature = signature;
+  ui.chipRow.innerHTML = tiers
+    .map((tier) => `<button type="button" data-chip="${Number(tier)}"><span>${formatMoney(tier).replace(".00", "")}</span></button>`)
+    .join("");
 }
 
 function trackCashoutEffects(round) {
@@ -281,12 +362,14 @@ function render() {
   const player = snapshot?.player;
   const round = snapshot?.round;
   trackCashoutEffects(round);
+  renderChips();
+  const currentMultiplier = displayMultiplier(round);
   ui.playerName.textContent = player?.username || "Guest";
   ui.balance.textContent = formatMoney(player?.balance || 0);
   ui.phaseLabel.textContent = phaseText(round?.phase);
   ui.phaseLabel.className = `phase-label ${round?.phase || ""}`;
   ui.roundId.textContent = round?.id ? round.id.slice(-10) : "-";
-  ui.multiplier.textContent = formatMultiplier(round?.currentMultiplier || round?.crashMultiplier || 1);
+  ui.multiplier.textContent = formatMultiplier(currentMultiplier);
   if (ui.seedHash) {
     ui.seedHash.textContent = round?.seedHash || "-";
   }
@@ -346,7 +429,7 @@ function setupCanvas() {
     const width = rect.width;
     const height = rect.height;
     const round = snapshot?.round;
-    const multiplier = Number(round?.currentMultiplier || round?.crashMultiplier || 1);
+    const multiplier = Number(displayMultiplier(round));
 
     ctx.clearRect(0, 0, width, height);
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -579,10 +662,10 @@ ui.cashoutButton.addEventListener("click", async () => {
   }
 });
 
-document.querySelectorAll("[data-chip]").forEach((button) => {
-  button.addEventListener("click", () => {
-    ui.amountInput.value = button.dataset.chip;
-  });
+ui.chipRow.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-chip]");
+  if (!button) return;
+  ui.amountInput.value = button.dataset.chip;
 });
 
 ui.autoToggle.addEventListener("change", () => {
@@ -592,6 +675,7 @@ ui.autoToggle.addEventListener("change", () => {
 setInterval(() => {
   if (snapshot) {
     renderClock(snapshot.round);
+    ui.multiplier.textContent = formatMultiplier(displayMultiplier(snapshot.round));
     renderActions();
   }
 }, 250);

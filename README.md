@@ -9,7 +9,9 @@
 - 玩家端：登录、余额、下注、可选自动提现、手动提现、实时倍率、下注列表、历史回合。
 - 后台端：本地免登录、运营指标、玩家余额调整、游戏参数、暂停/恢复、强制爆炸、回合记录。
 - 机器人：每局自动生成机器人玩家，分批下注，并按各自自动提现倍率跳下。纯机器人局可按配置概率飞到 100-500 倍。
-- 实时通信：使用 Server-Sent Events，无需外部依赖。
+- 奖池：真实玩家下注进入奖池，提现返还从奖池扣除；真实玩家局的最大爆点会受奖池承受能力限制。
+- 下注档位：后台可配置前台筹码档位，例如 `10,50,100,500`。
+- 实时通信：使用 WebSocket 事件推送，无需外部依赖；飞行倍率由前端本地计算，服务端只做权威结算。
 - 持久化：本地 JSON 文件 `data/db.json`，服务启动时自动创建。
 - 公平性：每局提前公开 `serverSeedHash`，结束后公开 `serverSeed` 和 HMAC，便于复算爆炸点。
 
@@ -134,8 +136,8 @@ BASE_PORT=3000 MAX_PORT=3050 bash start-linux.sh
 
 ## 后台功能说明
 
-- 顶部指标：用于观察本地演示数据。总下注和总返还是历史回合累计，平台盈亏等于总下注减总返还，玩家余额是所有真实玩家当前积分合计。
-- 当前回合：显示当前局状态、实时倍率、预设爆点和公平性 Hash。后台能看到爆点，玩家端飞行阶段看不到。
+- 顶部指标：用于观察本地演示数据。总下注和总返还包含历史回合和当前局，机器人下注也计入平台盈亏，玩家余额是所有真实玩家当前积分合计。
+- 当前回合：显示当前局状态、实时倍率、预设爆点、奖池承受上限和公平性 Hash。后台能看到爆点，玩家端飞行阶段看不到。
 - 强制爆炸：本地测试用。留空会按当前倍率立即爆炸；填写倍率会把当前局爆点改成该值。这类回合会标记为 `forced`。
 - 暂停/恢复：暂停后不再开新局；当前局如果已经开始，会按当前状态继续走完。
 - 游戏参数：保存到 `data/db.json`。多数参数下一局完整生效，当前已经创建的回合不会全部重算。
@@ -175,6 +177,24 @@ currentMultiplier >= crashMultiplier
 
 普通随机局的最大爆点由后台 `最大倍率` 控制。默认是 `100x`，不是算法只能算到 `100x`；后台可以把它调高，服务端当前限制最高 `1000x`。
 
+### 奖池承受上限
+
+真实玩家下注后，服务端会计算奖池最多能承受多少倍：
+
+```text
+poolCapMultiplier = prizePool / humanOpenBetAmount
+crashMultiplier = min(randomCrashMultiplier, poolCapMultiplier, maxCrashMultiplier)
+```
+
+大白话解释：
+
+- `prizePool` 是后台奖池余额。
+- `humanOpenBetAmount` 是当前局还没结算的真实玩家下注总额。
+- 如果真实玩家总共下注 `100`，奖池有 `1000`，那奖池最多承受 `10x` 总返还。
+- 如果随机爆点算出 `25x`，但奖池只能承受 `10x`，这一局真实爆点会被压到 `10x`。
+- 机器人下注不消耗奖池，但会计入后台总下注、总返还和平台盈亏。
+- 真实玩家下注会进入奖池，真实玩家提现返还会从奖池扣除。
+
 ### 2. 前端视觉轨迹
 
 前端画面为了让轨迹稳定，会把倍率转成 0 到 1 的进度：
@@ -194,6 +214,36 @@ y = bottom - progress^1.45 * height
 - 这只是视觉显示公式，不参与结算。
 
 火箭的视觉轨迹不会决定输赢，服务端的 `currentMultiplier >= crashMultiplier` 才会结算爆炸。
+
+## 实时通信
+
+玩家端连接：
+
+```text
+ws://host/ws?playerId=...
+```
+
+服务端不再每 `100ms` 推完整状态，只推这些小事件：
+
+```text
+snapshot          连接后初始状态
+round_start       新局开始
+bet_placed        有玩家或机器人下注
+flight_start      火箭起飞，包含 launchAt 和曲线参数
+cashout           有玩家或机器人跳出
+crash             火箭爆炸，才公开 crashMultiplier/serverSeed/hmac
+settings_updated  后台参数变化
+player_update     当前玩家余额变化
+```
+
+飞行中倍率不持续推送。前端收到 `flight_start` 后，用服务端给的 `launchAt` 自己计算：
+
+```text
+elapsedMs = browserServerNow - launchAt
+currentMultiplier = exp(elapsedMs / 6500)
+```
+
+玩家点击提现时，客户端只发送“我要提现”。服务端用自己的时间重新计算当前倍率并结算，所以前端本地动画不能决定输赢。
 
 ### 3. 爆点生成
 
@@ -319,7 +369,7 @@ else if random < botOnlyHighFlightBps / 10000:
 
 ## 爆点传输
 
-玩家端实时连接 `/events?playerId=...`，服务端通过 SSE 推送 `state` 事件。
+玩家端实时连接 `/ws?playerId=...`，服务端通过 WebSocket 推送事件。
 
 下注和飞行阶段只推送：
 
@@ -333,7 +383,7 @@ else if random < botOnlyHighFlightBps / 10000:
 
 不会提前把 `crashMultiplier` 或 `serverSeed` 发给玩家端。
 
-爆炸后才推送：
+爆炸后才通过 `crash` 事件推送：
 
 ```json
 {
