@@ -33,18 +33,25 @@
               <strong id="roundId" class="round-id">-</strong>
             </div>
             <div class="round-clock">
+              <button id="historyButton" class="history-button" type="button">History</button>
               <span id="clockLabel">--</span>
             </div>
           </div>
           <div class="stage">
             <canvas id="rocketCanvas" width="960" height="520" aria-label="rocket multiplier chart"></canvas>
             <div id="cashoutEffects" class="cashout-effects" aria-hidden="true"></div>
+            <div id="historyPopover" class="history-popover hidden">
+              <div class="history-popover-head">
+                <strong>History</strong>
+                <button id="historyClose" type="button" aria-label="Close history">x</button>
+              </div>
+              <div id="history" class="history-strip"></div>
+            </div>
             <div class="multiplier-readout">
               <strong id="multiplier">1.00x</strong>
               <span id="resultLabel">Place your bet</span>
             </div>
           </div>
-          <div id="history" class="history-strip"></div>
         </section>
 
         <aside class="bet-panel">

@@ -1099,3 +1099,188 @@ body:not(.admin-body) .table-panel td:nth-child(2) {
     font-size: clamp(40px, 8vw, 62px);
   }
 }
+
+/* Final livestream composition: users on the left, rocket in the center/top,
+   betting controls below the rocket. Designed to fit a 750x750 capture. */
+body:not(.admin-body) .game-layout {
+  grid-template-areas:
+    "players stage"
+    "players bet";
+  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 188px;
+  gap: 8px;
+}
+
+body:not(.admin-body) .table-panel {
+  grid-area: players;
+}
+
+body:not(.admin-body) .stage-panel {
+  grid-area: stage;
+}
+
+body:not(.admin-body) .bet-panel {
+  grid-area: bet;
+}
+
+body:not(.admin-body) .round-clock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body:not(.admin-body) .history-button {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body:not(.admin-body) .history-popover {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 6;
+  width: min(280px, calc(100% - 20px));
+  max-height: 190px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(17, 17, 15, 0.92);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+body:not(.admin-body) .history-popover.hidden {
+  display: none;
+}
+
+body:not(.admin-body) .history-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 10px;
+}
+
+body:not(.admin-body) .history-popover-head button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-weight: 900;
+}
+
+body:not(.admin-body) .history-popover .history-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  min-height: 0;
+  max-height: 156px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+body:not(.admin-body) .history-popover .history-chip {
+  min-width: 0;
+  padding: 5px 4px;
+  text-align: center;
+  font-size: 11px;
+}
+
+body:not(.admin-body) .bet-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+body:not(.admin-body) .bet-form {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 122px 112px;
+  grid-template-rows: 62px 58px;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: end;
+}
+
+body:not(.admin-body) .bet-form > label:nth-of-type(1) {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+}
+
+body:not(.admin-body) .bet-form > .chip-row {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+body:not(.admin-body) .bet-form > .switch-line {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+body:not(.admin-body) .bet-form > label:nth-of-type(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+body:not(.admin-body) .bet-form > .primary-button {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+body:not(.admin-body) .bet-form > .cashout-button {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+body:not(.admin-body) .bet-panel .my-bet {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+body:not(.admin-body) .bet-panel .my-bet small {
+  grid-column: 1 / -1;
+}
+
+body:not(.admin-body) .bet-panel .message {
+  min-height: 16px;
+}
+
+body:not(.admin-body) .table-panel .table-wrap {
+  overflow: hidden;
+}
+
+body:not(.admin-body) .table-panel th,
+body:not(.admin-body) .table-panel td {
+  height: 25px;
+  padding: 0 6px;
+  font-size: 10.5px;
+}
+
+@media (max-width: 760px), (max-height: 760px) {
+  body:not(.admin-body) .game-layout {
+    grid-template-columns: 150px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 178px;
+  }
+
+  body:not(.admin-body) .bet-form {
+    grid-template-columns: 108px minmax(0, 1fr) 112px 104px;
+  }
+
+  body:not(.admin-body) .chip-row button {
+    width: 42px;
+  }
+}

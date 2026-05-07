@@ -14,6 +14,9 @@ const ui = {
   multiplier: $("#multiplier"),
   resultLabel: $("#resultLabel"),
   cashoutEffects: $("#cashoutEffects"),
+  historyButton: $("#historyButton"),
+  historyPopover: $("#historyPopover"),
+  historyClose: $("#historyClose"),
   seedHash: $("#seedHash"),
   history: $("#history"),
   betForm: $("#betForm"),
@@ -679,6 +682,14 @@ ui.chipRow.addEventListener("click", (event) => {
 
 ui.autoToggle.addEventListener("change", () => {
   ui.autoInput.disabled = !ui.autoToggle.checked;
+});
+
+ui.historyButton.addEventListener("click", () => {
+  ui.historyPopover.classList.toggle("hidden");
+});
+
+ui.historyClose.addEventListener("click", () => {
+  ui.historyPopover.classList.add("hidden");
 });
 
 setInterval(() => {
