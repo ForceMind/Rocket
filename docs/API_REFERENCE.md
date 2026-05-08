@@ -34,7 +34,7 @@ https://localhost:3000
 | Method | Path | 说明 |
 | --- | --- | --- |
 | GET | `/` | 玩家端 |
-| GET | `/admin` | 后台端 |
+| GET | `/manage` | 后台端，路径可通过 `ADMIN_PATH` 配置 |
 | GET | `/favicon.ico` | 跳转到 `/favicon.svg` |
 
 ## 3. 玩家 API
@@ -324,6 +324,25 @@ POST /api/admin/pause
 
 - 暂停后不再创建新局。
 - 当前已经进行中的回合继续走完。
+
+### 4.7 维护操作
+
+```text
+POST /api/admin/maintenance
+```
+
+请求：
+
+```json
+{
+  "action": "clear_metrics"
+}
+```
+
+`action` 可选值：
+
+- `clear_metrics`：清理顶部金额指标，让总下注、总返还和平台盈亏从当前时点重新统计，不删除玩家、奖池或回合记录。
+- `clear_rounds`：删除历史回合记录，同时重置金额指标偏移，不删除玩家、奖池或当前回合。
 
 ## 5. WebSocket
 

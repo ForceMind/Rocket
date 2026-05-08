@@ -9,11 +9,20 @@ const PORT = Number(process.env.PORT || 3000);
 const HTTPS_KEY_PATH = process.env.HTTPS_KEY_PATH || process.env.SSL_KEY_PATH || process.env.TLS_KEY_PATH || "";
 const HTTPS_CERT_PATH = process.env.HTTPS_CERT_PATH || process.env.SSL_CERT_PATH || process.env.TLS_CERT_PATH || "";
 const HTTPS_CA_PATH = process.env.HTTPS_CA_PATH || process.env.SSL_CA_PATH || process.env.TLS_CA_PATH || "";
+const ADMIN_PATH = normalizeAdminPath(process.env.ADMIN_PATH || "/manage");
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const CURVE_SPEED_MS = 6500;
+
+function normalizeAdminPath(value) {
+  const raw = String(value || "/manage").trim();
+  if (!raw || raw === "/") return "/manage";
+  const withoutQuery = raw.split(/[?#]/)[0];
+  const pathValue = withoutQuery.startsWith("/") ? withoutQuery : `/${withoutQuery}`;
+  return pathValue.replace(/\/+$/, "") || "/manage";
+}
 
 const DEFAULT_SETTINGS = {
   bettingDurationMs: 7000,
@@ -116,10 +125,16 @@ function sha256(value) {
 
 function normalizeDb(input) {
   const safe = input && typeof input === "object" ? input : {};
+  const metricOffsets = safe.metricOffsets && typeof safe.metricOffsets === "object" ? safe.metricOffsets : {};
   return {
     settings: { ...DEFAULT_SETTINGS, ...(safe.settings || {}) },
     players: safe.players && typeof safe.players === "object" ? safe.players : {},
     rounds: Array.isArray(safe.rounds) ? safe.rounds : [],
+    metricOffsets: {
+      totalBetCents: Number.isFinite(metricOffsets.totalBetCents) ? Math.trunc(metricOffsets.totalBetCents) : 0,
+      totalPayoutCents: Number.isFinite(metricOffsets.totalPayoutCents) ? Math.trunc(metricOffsets.totalPayoutCents) : 0,
+      houseProfitCents: Number.isFinite(metricOffsets.houseProfitCents) ? Math.trunc(metricOffsets.houseProfitCents) : 0
+    },
     fair: {
       nonce: Number.isSafeInteger(safe.fair?.nonce) ? safe.fair.nonce : 1
     },
@@ -836,10 +851,11 @@ function adminSnapshot() {
     { totalBet: 0, totalPayout: 0, houseProfit: 0 }
   );
   const liveTotals = roundMoneyTotals(currentRound);
+  const metricOffsets = db.metricOffsets || {};
   const combinedTotals = {
-    totalBet: totals.totalBet + liveTotals.totalBet,
-    totalPayout: totals.totalPayout + liveTotals.totalPayout,
-    houseProfit: totals.houseProfit + liveTotals.houseProfit
+    totalBet: totals.totalBet + liveTotals.totalBet + (metricOffsets.totalBetCents || 0),
+    totalPayout: totals.totalPayout + liveTotals.totalPayout + (metricOffsets.totalPayoutCents || 0),
+    houseProfit: totals.houseProfit + liveTotals.houseProfit + (metricOffsets.houseProfitCents || 0)
   };
   const playerList = Object.values(db.players).sort((a, b) => b.balanceCents - a.balanceCents);
   const onlinePlayerIds = new Set([...clients].map((client) => client.playerId).filter(Boolean));
@@ -1073,6 +1089,26 @@ function requireAdmin(req) {
   return { localDev: true };
 }
 
+function currentMoneyMetrics() {
+  const historyTotals = db.rounds.reduce(
+    (acc, round) => {
+      const totals = persistedRoundMoneyTotals(round);
+      acc.totalBet += totals.totalBet;
+      acc.totalPayout += totals.totalPayout;
+      acc.houseProfit += totals.houseProfit;
+      return acc;
+    },
+    { totalBet: 0, totalPayout: 0, houseProfit: 0 }
+  );
+  const liveTotals = roundMoneyTotals(currentRound);
+  const offsets = db.metricOffsets || {};
+  return {
+    totalBet: historyTotals.totalBet + liveTotals.totalBet + (offsets.totalBetCents || 0),
+    totalPayout: historyTotals.totalPayout + liveTotals.totalPayout + (offsets.totalPayoutCents || 0),
+    houseProfit: historyTotals.houseProfit + liveTotals.houseProfit + (offsets.houseProfitCents || 0)
+  };
+}
+
 async function handleApi(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
 
@@ -1283,6 +1319,34 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, adminSnapshot());
   }
 
+  if (route === "POST /api/admin/maintenance") {
+    const body = await readJson(req);
+    const action = String(body.action || "");
+
+    if (action === "clear_metrics") {
+      const current = currentMoneyMetrics();
+      db.metricOffsets = {
+        totalBetCents: (db.metricOffsets?.totalBetCents || 0) - current.totalBet,
+        totalPayoutCents: (db.metricOffsets?.totalPayoutCents || 0) - current.totalPayout,
+        houseProfitCents: (db.metricOffsets?.houseProfitCents || 0) - current.houseProfit
+      };
+      audit("admin.clear-metrics", { cleared: current, offsets: db.metricOffsets });
+      saveDb();
+      return sendJson(res, 200, adminSnapshot());
+    }
+
+    if (action === "clear_rounds") {
+      const removed = db.rounds.length;
+      db.rounds = [];
+      db.metricOffsets = { totalBetCents: 0, totalPayoutCents: 0, houseProfitCents: 0 };
+      audit("admin.clear-rounds", { removed });
+      saveDb();
+      return sendJson(res, 200, adminSnapshot());
+    }
+
+    throw httpError(400, "维护操作无效");
+  }
+
   if (route === "POST /api/admin/player-credit") {
     const body = await readJson(req);
     const player = getPlayer(body.playerId);
@@ -1342,7 +1406,9 @@ async function handleApi(req, res, url) {
 function safeStaticPath(urlPathname) {
   let pathname = decodeURIComponent(urlPathname);
   if (pathname === "/") pathname = "/index.html";
-  if (pathname === "/admin") pathname = "/admin.html";
+  const isAdminPage = pathname === ADMIN_PATH;
+  if (isAdminPage) pathname = "/admin.html";
+  if (!isAdminPage && (pathname === "/admin" || pathname === "/admin.html")) return null;
   const resolved = path.resolve(PUBLIC_DIR, `.${pathname}`);
   const relative = path.relative(PUBLIC_DIR, resolved);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
@@ -1409,7 +1475,7 @@ createRound();
 
 server.listen(PORT, () => {
   console.log(`Rocket Crash Platform running at ${protocol}://localhost:${PORT}`);
-  console.log(`Admin console: ${protocol}://localhost:${PORT}/admin`);
+  console.log(`Admin console: ${protocol}://localhost:${PORT}${ADMIN_PATH}`);
   console.log(`WebSocket endpoint: ${wsProtocol}://localhost:${PORT}/ws`);
   console.log("Admin authentication is disabled for MVP/local operation.");
 });

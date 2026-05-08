@@ -21,6 +21,8 @@ const ui = {
   prizePoolForm: $("#prizePoolForm"),
   prizePoolInput: $("#prizePoolInput"),
   prizePoolSave: $("#prizePoolSave"),
+  clearMetricsButton: $("#clearMetricsButton"),
+  clearRoundsButton: $("#clearRoundsButton"),
   forceForm: $("#forceForm"),
   forceMultiplier: $("#forceMultiplier"),
   pauseButton: $("#pauseButton"),
@@ -274,6 +276,32 @@ ui.prizePoolForm.addEventListener("submit", async (event) => {
     settingsSaving = false;
     startPolling();
   }
+});
+
+async function runMaintenance(action, confirmText, button) {
+  if (!confirm(confirmText)) return;
+  button.disabled = true;
+  clearInterval(pollTimer);
+  try {
+    state = await adminApi("/api/admin/maintenance", {
+      method: "POST",
+      body: { action }
+    });
+    render({ forcePlayers: true });
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+    startPolling();
+  }
+}
+
+ui.clearMetricsButton.addEventListener("click", () => {
+  runMaintenance("clear_metrics", "确认清理平台盈亏统计？回合记录和玩家余额不会删除。", ui.clearMetricsButton);
+});
+
+ui.clearRoundsButton.addEventListener("click", () => {
+  runMaintenance("clear_rounds", "确认删除所有历史回合记录？该操作不会删除玩家和当前回合。", ui.clearRoundsButton);
 });
 
 ui.forceForm.addEventListener("submit", async (event) => {

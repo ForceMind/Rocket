@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+ENV_PUBLIC_HOST_SET="${PUBLIC_HOST+x}"
+ENV_PUBLIC_HOST_VALUE="${PUBLIC_HOST-}"
+ENV_PUBLIC_WS_HOST_SET="${PUBLIC_WS_HOST+x}"
+ENV_PUBLIC_WS_HOST_VALUE="${PUBLIC_WS_HOST-}"
+ENV_PUBLIC_WS_SCHEME_SET="${PUBLIC_WS_SCHEME+x}"
+ENV_PUBLIC_WS_SCHEME_VALUE="${PUBLIC_WS_SCHEME-}"
+ENV_PUBLIC_WS_PATH_SET="${PUBLIC_WS_PATH+x}"
+ENV_PUBLIC_WS_PATH_VALUE="${PUBLIC_WS_PATH-}"
+ENV_ADMIN_PATH_SET="${ADMIN_PATH+x}"
+ENV_ADMIN_PATH_VALUE="${ADMIN_PATH-}"
+ENV_PUBLIC_WS_URL_VALUE="${PUBLIC_WS_URL-${WS_URL-}}"
+ENV_PUBLIC_WS_URL_SET=""
+if [[ -n "${PUBLIC_WS_URL+x}" || -n "${WS_URL+x}" ]]; then
+  ENV_PUBLIC_WS_URL_SET="1"
+fi
+
 SERVICE_NAME="${SERVICE_NAME:-rocket-crash}"
 APP_DIR="${APP_DIR:-/opt/rocket-crash-platform}"
 RUN_USER="${RUN_USER:-rocket}"
@@ -18,6 +34,8 @@ PUBLIC_WS_URL="${PUBLIC_WS_URL:-${WS_URL:-}}"
 PUBLIC_WS_HOST="${PUBLIC_WS_HOST:-}"
 PUBLIC_WS_SCHEME="${PUBLIC_WS_SCHEME:-wss}"
 PUBLIC_WS_PATH="${PUBLIC_WS_PATH:-/ws}"
+ADMIN_PATH="${ADMIN_PATH:-/manage}"
+DEPLOY_CONFIG_FILE="${DEPLOY_CONFIG_FILE:-${APP_DIR}/data/deploy-config.env}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 trim_value() {
@@ -48,8 +66,78 @@ build_public_ws_url() {
   fi
 }
 
+normalize_public_path() {
+  local value="$1"
+  if [[ -z "$value" || "$value" == "/" ]]; then
+    echo "/manage"
+    return 0
+  fi
+  value="${value%%\?*}"
+  value="${value%%#*}"
+  if [[ "$value" != /* ]]; then
+    value="/${value}"
+  fi
+  while [[ "$value" == */ && "$value" != "/" ]]; do
+    value="${value%/}"
+  done
+  echo "$value"
+}
+
 can_prompt_deploy_config() {
-  [[ "${ASK_DEPLOY_CONFIG:-1}" == "1" && -t 0 && -t 1 ]]
+  [[ "${ASK_DEPLOY_CONFIG:-1}" == "1" && -t 0 && -t 1 && ("${LOADED_DEPLOY_CONFIG:-0}" != "1" || "${FORCE_DEPLOY_CONFIG_PROMPT:-0}" == "1") ]]
+}
+
+load_previous_deploy_config() {
+  LOADED_DEPLOY_CONFIG=0
+  if [[ ! -f "$DEPLOY_CONFIG_FILE" ]]; then
+    return 0
+  fi
+
+  # shellcheck disable=SC1090
+  source "$DEPLOY_CONFIG_FILE"
+  LOADED_DEPLOY_CONFIG=1
+
+  if [[ -n "$ENV_PUBLIC_HOST_SET" ]]; then
+    PUBLIC_HOST="$ENV_PUBLIC_HOST_VALUE"
+  fi
+  if [[ -n "$ENV_PUBLIC_WS_HOST_SET" ]]; then
+    PUBLIC_WS_HOST="$ENV_PUBLIC_WS_HOST_VALUE"
+    if [[ -z "$ENV_PUBLIC_WS_URL_SET" ]]; then
+      PUBLIC_WS_URL=""
+    fi
+  fi
+  if [[ -n "$ENV_PUBLIC_WS_SCHEME_SET" ]]; then
+    PUBLIC_WS_SCHEME="$ENV_PUBLIC_WS_SCHEME_VALUE"
+  fi
+  if [[ -n "$ENV_PUBLIC_WS_PATH_SET" ]]; then
+    PUBLIC_WS_PATH="$ENV_PUBLIC_WS_PATH_VALUE"
+  fi
+  if [[ -n "$ENV_ADMIN_PATH_SET" ]]; then
+    ADMIN_PATH="$ENV_ADMIN_PATH_VALUE"
+  fi
+  if [[ -n "$ENV_PUBLIC_WS_URL_SET" ]]; then
+    PUBLIC_WS_URL="$ENV_PUBLIC_WS_URL_VALUE"
+  fi
+}
+
+write_shell_value() {
+  local name="$1"
+  local value="$2"
+  printf "%s=%q\n" "$name" "$value"
+}
+
+save_previous_deploy_config() {
+  mkdir -p "$(dirname "$DEPLOY_CONFIG_FILE")"
+  {
+    echo "# Rocket deploy config. Edit this file or run FORCE_DEPLOY_CONFIG_PROMPT=1 sudo bash deploy-opencloudos.sh to change it."
+    write_shell_value "PUBLIC_HOST" "${PUBLIC_HOST:-}"
+    write_shell_value "PUBLIC_WS_URL" "${PUBLIC_WS_URL:-}"
+    write_shell_value "PUBLIC_WS_HOST" "${PUBLIC_WS_HOST:-}"
+    write_shell_value "PUBLIC_WS_SCHEME" "${PUBLIC_WS_SCHEME:-wss}"
+    write_shell_value "PUBLIC_WS_PATH" "${PUBLIC_WS_PATH:-/ws}"
+    write_shell_value "ADMIN_PATH" "${ADMIN_PATH:-/manage}"
+  } > "$DEPLOY_CONFIG_FILE"
+  chmod 600 "$DEPLOY_CONFIG_FILE"
 }
 
 prompt_deploy_config() {
@@ -58,32 +146,49 @@ prompt_deploy_config() {
   fi
 
   local input=""
+  local force_prompt="${FORCE_DEPLOY_CONFIG_PROMPT:-0}"
   echo
   echo "Deployment configuration"
   echo "Press Enter to keep defaults or values already provided by environment variables."
   echo "These public hosts are written only to the browser runtime config, not to the Node listener."
 
-  if [[ -z "$PUBLIC_HOST" ]]; then
-    read -r -p "Frontend public host, for example rocket.xincreates.com (blank = auto-detect public IP): " input
-    PUBLIC_HOST="$(trim_value "$input")"
+  if [[ -z "$PUBLIC_HOST" || "$force_prompt" == "1" ]]; then
+    read -r -p "Frontend public host, for example rocket.xincreates.com (current: ${PUBLIC_HOST:-auto-detect public IP}): " input
+    input="$(trim_value "$input")"
+    if [[ -n "$input" ]]; then
+      PUBLIC_HOST="$input"
+    fi
   else
     echo "Frontend public host: ${PUBLIC_HOST}"
   fi
 
-  if [[ -z "$PUBLIC_WS_URL" && -z "$PUBLIC_WS_HOST" ]]; then
-    read -r -p "Frontend WebSocket host or URL, for example rocket-api.xincreates.com or wss://rocket-api.xincreates.com/ws (blank = same as frontend host): " input
+  if [[ (-z "$PUBLIC_WS_URL" && -z "$PUBLIC_WS_HOST") || "$force_prompt" == "1" ]]; then
+    local current_ws="${PUBLIC_WS_URL:-${PUBLIC_WS_HOST:-same as frontend host}}"
+    read -r -p "Frontend WebSocket host or URL, for example rocket-api.xincreates.com or wss://rocket-api.xincreates.com/ws (current: ${current_ws}): " input
     input="$(trim_value "$input")"
     if [[ -n "$input" ]]; then
       if [[ "$input" =~ ^wss?:// ]]; then
         PUBLIC_WS_URL="$input"
+        PUBLIC_WS_HOST=""
       else
         PUBLIC_WS_HOST="$input"
+        PUBLIC_WS_URL=""
       fi
     fi
   elif [[ -n "$PUBLIC_WS_URL" ]]; then
     echo "WebSocket public URL: ${PUBLIC_WS_URL}"
   else
     echo "WebSocket public host: ${PUBLIC_WS_HOST}"
+  fi
+
+  if [[ -z "$ADMIN_PATH" || "$force_prompt" == "1" ]]; then
+    read -r -p "Admin page path, for example /manage (current: ${ADMIN_PATH:-/manage}): " input
+    input="$(trim_value "$input")"
+    if [[ -n "$input" ]]; then
+      ADMIN_PATH="$input"
+    fi
+  else
+    echo "Admin page path: ${ADMIN_PATH}"
   fi
 }
 
@@ -106,11 +211,16 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+load_previous_deploy_config
+if [[ "${LOADED_DEPLOY_CONFIG:-0}" == "1" && "${FORCE_DEPLOY_CONFIG_PROMPT:-0}" != "1" ]]; then
+  echo "Reusing deploy config from ${DEPLOY_CONFIG_FILE}."
+fi
 prompt_deploy_config
 
 if [[ -z "$PUBLIC_WS_URL" && -n "$PUBLIC_WS_HOST" ]]; then
   PUBLIC_WS_URL="$(build_public_ws_url "$PUBLIC_WS_HOST" "$PUBLIC_WS_SCHEME" "$PUBLIC_WS_PATH")"
 fi
+ADMIN_PATH="$(normalize_public_path "$ADMIN_PATH")"
 
 install_node_if_missing() {
   if command -v node >/dev/null 2>&1; then
@@ -198,11 +308,13 @@ if [[ "$SOURCE_REAL" != "$APP_REAL" ]]; then
     --exclude='node_modules' \
     --exclude='data/*.json' \
     --exclude='data/runtime.env' \
+    --exclude='data/deploy-config.env' \
     -C "$SOURCE_DIR" -cf - . | tar -C "$APP_DIR" -xf -
 fi
 
 mkdir -p "$APP_DIR/data"
 chmod +x "$APP_DIR/start-linux.sh"
+save_previous_deploy_config
 write_frontend_runtime_config
 chown -R "$RUN_USER:$RUN_USER" "$APP_DIR"
 
@@ -225,6 +337,7 @@ Environment=MAX_PORT=${MAX_PORT}
 Environment=HTTPS_KEY_PATH=${HTTPS_KEY_PATH}
 Environment=HTTPS_CERT_PATH=${HTTPS_CERT_PATH}
 Environment=HTTPS_CA_PATH=${HTTPS_CA_PATH}
+Environment=ADMIN_PATH=${ADMIN_PATH}
 ExecStart=${APP_DIR}/start-linux.sh
 Restart=always
 RestartSec=3
@@ -342,7 +455,7 @@ if [[ -n "$PUBLIC_HOST" ]]; then
 else
   PLAYER_URL="${PROTOCOL}://${DISPLAY_HOST}:${PORT}/"
 fi
-ADMIN_URL="${PLAYER_URL%/}/admin"
+ADMIN_URL="${PLAYER_URL%/}${ADMIN_PATH}"
 
 echo
 echo "Deployment complete."

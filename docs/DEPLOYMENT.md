@@ -51,13 +51,13 @@ node server.js
 启用后访问：
 
 - 玩家端：https://localhost:3000/
-- 后台端：https://localhost:3000/admin
+- 后台端：https://localhost:3000/manage
 - WebSocket：wss://localhost:3000/ws
 
 访问：
 
 - 玩家端：http://localhost:3000/
-- 后台端：http://localhost:3000/admin
+- 后台端：http://localhost:3000/manage
 
 ## 3. Linux 前台启动
 
@@ -166,7 +166,7 @@ sudo chmod 640 /opt/rocket-crash-platform/certs/*.pem
 
 ```text
 Player URL: https://rocket.example.com:3000/
-Admin URL : https://rocket.example.com:3000/admin
+Admin URL : https://rocket.example.com:3000/manage
 WebSocket : wss://rocket.example.com:3000/ws
 ```
 
@@ -366,9 +366,30 @@ sudo bash deploy-opencloudos.sh
 ```text
 Frontend public host
 Frontend WebSocket host or URL
+Admin page path
 ```
 
-按回车会保留默认行为：页面域名为空时自动识别公网 IP，WebSocket 为空时玩家端按当前页面域名连接 `/ws`。如果需要无人值守部署，可以继续通过环境变量传值，或设置 `ASK_DEPLOY_CONFIG=0` 跳过提问。
+按回车会保留默认行为：页面域名为空时自动识别公网 IP，WebSocket 为空时玩家端按当前页面域名连接 `/ws`。
+
+填写后的部署入口和后台路径会保存到：
+
+```text
+/opt/rocket-crash-platform/data/deploy-config.env
+```
+
+下次运行 `sudo bash deploy-opencloudos.sh` 会自动复用，不再重复提问。需要重新输入时运行：
+
+```bash
+sudo FORCE_DEPLOY_CONFIG_PROMPT=1 bash deploy-opencloudos.sh
+```
+
+如果需要无人值守部署，可以继续通过环境变量传值，或设置 `ASK_DEPLOY_CONFIG=0` 跳过提问。
+
+后台页面默认路径是 `/manage`。如需显式指定：
+
+```bash
+sudo ADMIN_PATH=/control bash deploy-opencloudos.sh
+```
 
 推荐 `cloudflared` ingress：
 

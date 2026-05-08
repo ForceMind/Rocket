@@ -5,7 +5,7 @@
 本地地址：
 
 ```text
-http://localhost:3000/admin
+http://localhost:3000/manage
 ```
 
 当前 MVP 后台免密码，适合本地开发和演示，不适合公网生产环境。

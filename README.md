@@ -52,7 +52,7 @@ node server.js
 访问地址：
 
 - 玩家端：http://localhost:3000/
-- 后台端：http://localhost:3000/admin
+- 后台端：http://localhost:3000/manage
 
 如果 3000 已被其他服务占用，本地手动启动需要自己换端口；Linux 脚本支持端口自增。
 
@@ -108,7 +108,13 @@ sudo PUBLIC_HOST=rocket.xincreates.com \
 
 脚本会自动生成 `PUBLIC_WS_URL=wss://rocket-api.xincreates.com/ws`，并写入玩家端的 `public/runtime-config.js`。这个值只影响浏览器要连接哪个公网 WSS 地址，不会改变 Node 服务监听的端口、协议或域名。
 
-直接运行 `sudo bash deploy-opencloudos.sh` 时，脚本也会在终端询问玩家页面域名和 WebSocket 域名。需要无人值守部署时继续使用上面的环境变量；或者设置 `ASK_DEPLOY_CONFIG=0` 跳过交互。
+直接运行 `sudo bash deploy-opencloudos.sh` 时，脚本会在终端询问玩家页面域名、WebSocket 域名和后台页面路径。填写后会保存到 `/opt/rocket-crash-platform/data/deploy-config.env`，下次部署会自动复用，不需要重复输入。需要重新输入时使用：
+
+```bash
+sudo FORCE_DEPLOY_CONFIG_PROMPT=1 bash deploy-opencloudos.sh
+```
+
+需要无人值守部署时继续使用上面的环境变量；或者设置 `ASK_DEPLOY_CONFIG=0` 跳过交互。
 
 默认端口范围：
 

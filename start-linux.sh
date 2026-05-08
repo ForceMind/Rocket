@@ -8,6 +8,26 @@ NODE_BIN="${NODE_BIN:-}"
 HTTPS_KEY_PATH="${HTTPS_KEY_PATH:-${SSL_KEY_PATH:-${TLS_KEY_PATH:-}}}"
 HTTPS_CERT_PATH="${HTTPS_CERT_PATH:-${SSL_CERT_PATH:-${TLS_CERT_PATH:-}}}"
 HTTPS_CA_PATH="${HTTPS_CA_PATH:-${SSL_CA_PATH:-${TLS_CA_PATH:-}}}"
+ADMIN_PATH="${ADMIN_PATH:-/manage}"
+
+normalize_admin_path() {
+  local value="$1"
+  if [[ -z "$value" || "$value" == "/" ]]; then
+    echo "/manage"
+    return 0
+  fi
+  value="${value%%\?*}"
+  value="${value%%#*}"
+  if [[ "$value" != /* ]]; then
+    value="/${value}"
+  fi
+  while [[ "$value" == */ && "$value" != "/" ]]; do
+    value="${value%/}"
+  done
+  echo "$value"
+}
+
+ADMIN_PATH="$(normalize_admin_path "$ADMIN_PATH")"
 
 if [[ -z "$NODE_BIN" ]]; then
   if command -v node >/dev/null 2>&1; then
@@ -59,6 +79,7 @@ export PORT
 export HTTPS_KEY_PATH
 export HTTPS_CERT_PATH
 export HTTPS_CA_PATH
+export ADMIN_PATH
 
 PROTOCOL="http"
 WS_PROTOCOL="ws"
@@ -75,7 +96,8 @@ MAX_PORT=${MAX_PORT}
 PROTOCOL=${PROTOCOL}
 WS_PROTOCOL=${WS_PROTOCOL}
 URL=${PROTOCOL}://localhost:${PORT}/
-ADMIN_URL=${PROTOCOL}://localhost:${PORT}/admin
+ADMIN_URL=${PROTOCOL}://localhost:${PORT}${ADMIN_PATH}
+ADMIN_PATH=${ADMIN_PATH}
 EOF
 
 echo "Rocket Crash Platform starting on ${PROTOCOL}://0.0.0.0:${PORT}"
