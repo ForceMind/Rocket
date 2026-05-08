@@ -18,6 +18,9 @@ const ui = {
   adminCrashMultiplier: $("#adminCrashMultiplier"),
   adminPoolCap: $("#adminPoolCap"),
   adminSeedHash: $("#adminSeedHash"),
+  prizePoolForm: $("#prizePoolForm"),
+  prizePoolInput: $("#prizePoolInput"),
+  prizePoolSave: $("#prizePoolSave"),
   forceForm: $("#forceForm"),
   forceMultiplier: $("#forceMultiplier"),
   pauseButton: $("#pauseButton"),
@@ -125,6 +128,9 @@ function renderMetrics() {
   ui.metricProfit.textContent = formatMoney(metrics.houseProfit);
   ui.metricProfit.style.color = Number(metrics.houseProfit || 0) >= 0 ? "var(--green)" : "var(--red)";
   ui.metricPrizePool.textContent = formatMoney(metrics.prizePool);
+  if (document.activeElement !== ui.prizePoolInput) {
+    ui.prizePoolInput.value = state?.settings?.prizePool ?? metrics.prizePool ?? "";
+  }
   ui.metricCurrentBotCount.textContent = metrics.currentBotCount || 0;
   ui.metricLiability.textContent = formatMoney(metrics.playerLiability);
 }
@@ -248,6 +254,26 @@ ui.settingsForm.addEventListener("submit", async (event) => {
 
 ui.settingsForm.addEventListener("input", () => {
   settingsDirty = true;
+});
+
+ui.prizePoolForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  settingsSaving = true;
+  ui.prizePoolSave.disabled = true;
+  clearInterval(pollTimer);
+  try {
+    state = await adminApi("/api/admin/settings", {
+      method: "POST",
+      body: { prizePool: ui.prizePoolInput.value }
+    });
+    render();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    ui.prizePoolSave.disabled = false;
+    settingsSaving = false;
+    startPolling();
+  }
 });
 
 ui.forceForm.addEventListener("submit", async (event) => {
