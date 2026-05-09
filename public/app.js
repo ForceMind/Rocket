@@ -61,6 +61,8 @@ const ui = {
 const runtimeConfig = window.ROCKET_CONFIG || {};
 const DEFAULT_CURVE_SPEED_MS = 6500;
 const DEFAULT_MAX_DISPLAY_MULTIPLIER = 1000;
+const DISPLAY_LAG_MS = 1000;
+const HIGH_LATENCY_THRESHOLD_MS = 1000;
 const STALE_FLIGHT_GRACE_MS = 10000;
 const STATE_REFRESH_INTERVAL_MS = 5000;
 
@@ -76,6 +78,7 @@ let trackedRoundId = null;
 let betStatusById = new Map();
 let renderedChipSignature = "";
 let serverTimeOffset = 0;
+let currentLatencyMs = null;
 let latencyTimer = null;
 let latencyInFlight = false;
 let latencyTimeout = null;
@@ -153,8 +156,8 @@ function displayMultiplier(round = snapshot?.round) {
     return fallback;
   }
 
-  const elapsed = Math.max(0, serverNow() - launchAt);
-  if (!Number.isFinite(elapsed)) {
+  const trueElapsed = Math.max(0, serverNow() - launchAt);
+  if (!Number.isFinite(trueElapsed)) {
     refreshState("invalid-elapsed");
     return fallback;
   }
@@ -162,11 +165,12 @@ function displayMultiplier(round = snapshot?.round) {
   const displayCap = maxDisplayMultiplier();
   const maxExponent = Math.log(displayCap);
   const staleAtMs = maxExponent * speedMs + STALE_FLIGHT_GRACE_MS;
-  if (elapsed > staleAtMs) {
+  if (trueElapsed > staleAtMs) {
     refreshState("stale-flight");
   }
 
-  const exponent = Math.min(elapsed / speedMs, maxExponent);
+  const displayElapsed = Math.max(0, trueElapsed - DISPLAY_LAG_MS);
+  const exponent = Math.min(displayElapsed / speedMs, maxExponent);
   const raw = Math.exp(exponent);
   if (!Number.isFinite(raw)) {
     refreshState("overflow");
@@ -188,6 +192,12 @@ function showMessage(text, isError = false) {
       ui.message.textContent = "";
     }, 3200);
   }
+}
+
+function resetLatencyStatus() {
+  currentLatencyMs = null;
+  ui.connectionStatus.textContent = "-- ms";
+  ui.connectionStatus.classList.remove("online", "slow");
 }
 
 async function api(path, options = {}) {
@@ -215,15 +225,13 @@ function sendLatencyPing() {
     source.send(JSON.stringify({ type: "ping", clientTime }));
   } catch {
     latencyInFlight = false;
-    ui.connectionStatus.textContent = "-- ms";
-    ui.connectionStatus.classList.remove("online");
+    resetLatencyStatus();
     return;
   }
   clearTimeout(latencyTimeout);
   latencyTimeout = setTimeout(() => {
     latencyInFlight = false;
-    ui.connectionStatus.textContent = "-- ms";
-    ui.connectionStatus.classList.remove("online");
+    resetLatencyStatus();
   }, 2500);
 }
 
@@ -233,8 +241,10 @@ function handleLatencyPong(data) {
   const clientTime = Number(data.clientTime);
   if (!Number.isFinite(clientTime)) return;
   const rtt = Math.max(1, Date.now() - clientTime);
+  currentLatencyMs = rtt;
   ui.connectionStatus.textContent = `${rtt} ms`;
   ui.connectionStatus.classList.add("online");
+  ui.connectionStatus.classList.toggle("slow", rtt > HIGH_LATENCY_THRESHOLD_MS);
 }
 
 function startLatencyMonitor() {
@@ -542,8 +552,7 @@ function connectEvents() {
   if (source) source.close();
   clearTimeout(reconnectTimer);
 
-  ui.connectionStatus.textContent = "-- ms";
-  ui.connectionStatus.classList.remove("online");
+  resetLatencyStatus();
   const socket = new WebSocket(buildWsUrl(session.playerId));
   source = socket;
   socket.addEventListener("open", () => {
@@ -561,8 +570,7 @@ function connectEvents() {
   socket.addEventListener("close", () => {
     if (source !== socket) return;
     source = null;
-    ui.connectionStatus.textContent = "-- ms";
-    ui.connectionStatus.classList.remove("online");
+    resetLatencyStatus();
     clearInterval(latencyTimer);
     clearTimeout(latencyTimeout);
     latencyInFlight = false;
@@ -571,8 +579,7 @@ function connectEvents() {
   });
   socket.addEventListener("error", () => {
     if (source !== socket) return;
-    ui.connectionStatus.textContent = "-- ms";
-    ui.connectionStatus.classList.remove("online");
+    resetLatencyStatus();
     clearTimeout(latencyTimeout);
     latencyInFlight = false;
     socket.close();
@@ -823,6 +830,20 @@ function renderActions() {
   ui.placeBetButton.textContent = label;
   ui.placeBetButton.disabled = disabled;
   ui.placeBetButton.classList.toggle("cashout-mode", mode === "cashout");
+}
+
+function confirmHighLatencyBet() {
+  if (!Number.isFinite(currentLatencyMs) || currentLatencyMs <= HIGH_LATENCY_THRESHOLD_MS) {
+    return true;
+  }
+  const autoNote = ui.autoToggle.checked
+    ? "Auto Cashout is enabled and will be handled by the server."
+    : "Auto Cashout is recommended before placing this bet.";
+  return window.confirm(
+    `Your latency is ${currentLatencyMs} ms, which is over 1 second.\n\n` +
+    "The rocket display may be delayed, and manual cashout may fail even if the screen looks safe.\n\n" +
+    `${autoNote}\n\nPlace this bet anyway?`
+  );
 }
 
 function renderChips() {
@@ -1172,6 +1193,7 @@ ui.loginForm.addEventListener("submit", async (event) => {
 
 async function submitBet() {
   if (!session?.playerId) return;
+  if (!confirmHighLatencyBet()) return;
   ui.placeBetButton.disabled = true;
   try {
     const data = await api("/api/bet", {

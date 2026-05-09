@@ -133,6 +133,10 @@ a {
   color: var(--green);
 }
 
+.status-pill.slow {
+  color: var(--red);
+}
+
 .balance {
   color: var(--green);
   min-width: 96px;

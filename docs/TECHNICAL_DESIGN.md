@@ -166,6 +166,15 @@ currentMultiplier >= crashMultiplier
 
 服务端判断爆炸和提现，前端计算只用于显示。
 
+玩家端显示会额外减去 1 秒缓冲：
+
+```text
+displayElapsedMs = max(0, serverNow - launchAt - 1000)
+displayMultiplier = exp(displayElapsedMs / 6500)
+```
+
+这只影响画面和按钮文案，不影响服务端爆炸、手动提现或自动提现结算。目的在于让画面比服务端权威时间保守一些，降低网络延迟造成的“画面飞过爆点后才收到爆炸”的观感。
+
 前端显示保护：
 
 ```text
@@ -275,7 +284,13 @@ autoCashout < crashMultiplier
 currentMultiplier >= autoCashout
 ```
 
-如果自动提现倍率大于或等于爆点，则爆炸优先，自动提现失败。
+Auto Cashout 是服务端结算逻辑。前端只在下注时提交 `autoCashout` 目标倍率，后续不需要再发送提现请求。如果自动提现倍率大于或等于爆点，则爆炸优先，自动提现失败。
+
+延迟提示：
+
+- 玩家端通过 WebSocket ping/pong 统计当前 RTT。
+- RTT 超过 1000ms 时，延迟显示变红。
+- RTT 超过 1000ms 且玩家准备下注时，前端弹出确认框，提示手动 Cash Out 可能因为显示延迟失败，并建议使用 Auto Cashout。
 
 ## 10. 机器人调度
 
