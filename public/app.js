@@ -706,6 +706,11 @@ function renderTutorialView() {
       : tutorialState.step === "launching"
         ? "Waiting for Launch"
         : "Tutorial round";
+  const tutorialBet = getMyBet();
+  ui.resultLabel.classList.toggle("won", tutorialBet?.status === "cashed");
+  if (tutorialBet?.status === "cashed") {
+    ui.resultLabel.textContent = `Won +${formatMoney(tutorialBet.payout)}`;
+  }
   renderClock(round);
   renderHistory();
   renderMyHistory();
@@ -1022,17 +1027,19 @@ function renderMyBet() {
   const bet = getMyBet();
   const round = snapshot?.round;
   if (!bet) {
+    ui.myBetStatus.classList.remove("won");
     ui.myBetStatus.textContent = "No Bet";
     ui.myBetDetail.textContent = "-";
     return;
   }
 
+  ui.myBetStatus.classList.toggle("won", bet.status === "cashed");
   if (bet.status === "open") {
     ui.myBetStatus.textContent = round?.phase === "flying" ? "Ready to Cash Out" : "Waiting for Launch";
     ui.myBetDetail.textContent = `${formatMoney(bet.amount)} / Auto ${bet.autoCashout ? formatMultiplier(bet.autoCashout) : "Off"}`;
   } else if (bet.status === "cashed") {
-    ui.myBetStatus.textContent = `Cashed ${formatMultiplier(bet.cashoutMultiplier)}`;
-    ui.myBetDetail.textContent = `Payout ${formatMoney(bet.payout)}`;
+    ui.myBetStatus.textContent = `Won +${formatMoney(bet.payout)}`;
+    ui.myBetDetail.textContent = `Cashed at ${formatMultiplier(bet.cashoutMultiplier)}`;
   } else {
     ui.myBetStatus.textContent = "Lost";
     ui.myBetDetail.textContent = `Lost ${formatMoney(bet.amount)}`;
@@ -1185,6 +1192,11 @@ function render() {
     ui.resultLabel.textContent = `Crashed at ${formatMultiplier(round.crashMultiplier)}`;
   } else {
     ui.resultLabel.textContent = "Waiting";
+  }
+  const myBet = getMyBet();
+  ui.resultLabel.classList.toggle("won", myBet?.status === "cashed");
+  if (myBet?.status === "cashed") {
+    ui.resultLabel.textContent = `Won +${formatMoney(myBet.payout)}`;
   }
 
   renderHistory();

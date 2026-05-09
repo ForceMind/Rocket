@@ -302,6 +302,13 @@ body:not(.admin-body) .game-layout {
   font-weight: 700;
 }
 
+.multiplier-readout span.won {
+  border: 1px solid rgba(78, 212, 155, 0.42);
+  background: rgba(78, 212, 155, 0.14);
+  color: var(--green);
+  box-shadow: 0 0 24px rgba(78, 212, 155, 0.18);
+}
+
 .cashout-effects {
   position: absolute;
   inset: 0;
@@ -554,6 +561,10 @@ input[type="checkbox"] {
 
 .my-bet strong {
   color: var(--text);
+}
+
+.my-bet strong.won {
+  color: var(--green);
 }
 
 .message,
@@ -1920,7 +1931,7 @@ body:not(.admin-body) .bet-panel {
 
 body:not(.admin-body) .bet-form {
   display: grid;
-  grid-template-columns: minmax(236px, 1fr) 196px 104px;
+  grid-template-columns: minmax(236px, 1fr) 152px 112px;
   grid-template-rows: 40px 44px;
   column-gap: 8px;
   row-gap: 4px;
@@ -1957,12 +1968,13 @@ body:not(.admin-body) .bet-form > .switch-line {
 
 body:not(.admin-body) .bet-form > label:nth-of-type(3) {
   display: grid;
-  grid-template-columns: auto 84px;
+  grid-template-columns: auto 70px;
   align-items: center;
   column-gap: 8px;
   grid-column: 2;
   grid-row: 2;
   justify-self: start;
+  min-width: 0;
 }
 
 body:not(.admin-body) .bet-form > label:nth-of-type(3) span {
@@ -2014,7 +2026,7 @@ body:not(.admin-body) .table-panel td {
   }
 
   body:not(.admin-body) .bet-form {
-    grid-template-columns: minmax(226px, 1fr) 188px 100px;
+    grid-template-columns: minmax(226px, 1fr) 146px 104px;
     grid-template-rows: 40px 44px;
   }
 
