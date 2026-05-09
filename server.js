@@ -218,6 +218,7 @@ function publicPlayer(player) {
     id: player.id,
     username: player.username,
     balance: centsToAmount(player.balanceCents),
+    defaultAutoCashout: Number(player.defaultAutoCashout || 2),
     createdAt: player.createdAt,
     tutorialCompleted: Boolean(player.tutorialCompletedAt),
     tutorialCompletedAt: player.tutorialCompletedAt || null
@@ -257,6 +258,9 @@ function getOrCreatePlayer(username) {
   );
   if (existing) {
     existing.lastSeenAt = nowIso();
+    if (!Number.isFinite(Number(existing.defaultAutoCashout))) {
+      existing.defaultAutoCashout = 2;
+    }
     saveDb();
     return existing;
   }
@@ -265,6 +269,7 @@ function getOrCreatePlayer(username) {
     id: newId("player"),
     username: cleanUsername,
     balanceCents: db.settings.demoCreditCents,
+    defaultAutoCashout: 2,
     tutorialCompletedAt: null,
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -1189,6 +1194,20 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { player: publicPlayer(player), state: publicSnapshot(player.id) });
   }
 
+  if (route === "POST /api/player/preferences") {
+    const body = await readJson(req);
+    const player = getPlayer(body.playerId);
+    const defaultAutoCashout = Number(body.defaultAutoCashout);
+    if (!Number.isFinite(defaultAutoCashout) || defaultAutoCashout < 1.01 || defaultAutoCashout > db.settings.maxCrashMultiplier) {
+      throw httpError(400, "Default auto cashout multiplier is invalid");
+    }
+    player.defaultAutoCashout = Number(defaultAutoCashout.toFixed(2));
+    player.updatedAt = nowIso();
+    saveDb();
+    sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
+    return sendJson(res, 200, { player: publicPlayer(player), state: publicSnapshot(player.id) });
+  }
+
   if (route === "POST /api/bet") {
     const body = await readJson(req);
     const player = getPlayer(body.playerId);
@@ -1221,6 +1240,9 @@ async function handleApi(req, res, url) {
       throw httpError(400, "Auto cashout multiplier is invalid");
     }
 
+    if (autoCashout !== null) {
+      player.defaultAutoCashout = Number(autoCashout.toFixed(2));
+    }
     player.balanceCents -= amountCents;
     db.settings.prizePoolCents += amountCents;
     player.updatedAt = nowIso();

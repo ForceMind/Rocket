@@ -124,6 +124,7 @@ POST /api/player/login
     "id": "player_...",
     "username": "Tester01",
     "balance": 1000,
+    "defaultAutoCashout": 2,
     "createdAt": "2026-05-07T00:00:00.000Z",
     "tutorialCompleted": false,
     "tutorialCompletedAt": null
@@ -137,6 +138,7 @@ POST /api/player/login
 - 昵称至少 2 个字符。
 - 同名玩家会复用已有玩家记录。
 - 新玩家获得后台配置的初始积分。
+- `defaultAutoCashout` 是该玩家上次保存的自动逃离倍率，新玩家默认为 `2.00x`。
 - `tutorialCompleted` 表示该玩家是否已经完成或跳过新手引导，状态保存在服务器端。
 
 ### 3.4 新手引导完成记录
@@ -170,7 +172,34 @@ POST /api/player/tutorial
 }
 ```
 
-### 3.5 下注
+### 3.5 保存玩家偏好
+
+```text
+POST /api/player/preferences
+```
+
+请求：
+```json
+{
+  "playerId": "player_...",
+  "defaultAutoCashout": 3.25
+}
+```
+
+规则：
+- `defaultAutoCashout` 必须大于等于 `1.01`，并且不能超过后台最大倍率。
+- 玩家修改自动逃离倍率时，前端会把该值保存到服务器。
+- 下次同名登录时，前端会使用服务器返回的 `defaultAutoCashout` 填充 Cashout Multiplier。
+
+返回：
+```json
+{
+  "player": {},
+  "state": {}
+}
+```
+
+### 3.6 下注
 
 ```text
 POST /api/bet
@@ -194,6 +223,7 @@ POST /api/bet
 - `amount` 必须命中后台筹码档位。
 - `autoCashout` 可为 `null`，表示不启用自动提现。
 - `autoCashout` 提交后由服务端按服务器时间自动结算，前端不会在达到倍率时再发起提现请求。
+- `autoCashout` 不为空时，会同步保存为该玩家的 `defaultAutoCashout`。
 - 真实玩家下注会扣余额并进入奖池。
 
 返回：
@@ -206,7 +236,7 @@ POST /api/bet
 }
 ```
 
-### 3.6 Cash Out
+### 3.7 Cash Out
 
 ```text
 POST /api/cashout

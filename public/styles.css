@@ -476,6 +476,7 @@ input[type="checkbox"] {
   width: min(54px, 100%);
   aspect-ratio: 1;
   place-items: center;
+  padding: 0;
   overflow: hidden;
   border: 2px dashed rgba(244, 240, 231, 0.5);
   border-radius: 50%;
@@ -489,15 +490,18 @@ input[type="checkbox"] {
 .chip-row button span {
   position: relative;
   z-index: 1;
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 66%;
+  height: 66%;
   aspect-ratio: 1;
-  place-items: center;
   border-radius: 50%;
   background: #11110f;
   color: var(--text);
   font-size: 12px;
   font-weight: 900;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1752,6 +1756,98 @@ body:not(.admin-body) .app-version {
   pointer-events: none;
 }
 
+body.tutorial-active::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+}
+
+.tutorial-guide {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.tutorial-guide.hidden {
+  display: none;
+}
+
+.tutorial-coach {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 28px));
+  border: 1px solid rgba(180, 255, 91, 0.28);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(17, 17, 15, 0.96);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  pointer-events: auto;
+}
+
+.tutorial-coach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tutorial-coach-head strong {
+  color: var(--green);
+}
+
+.tutorial-coach h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.tutorial-coach p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tutorial-coach-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tutorial-coach-actions button {
+  min-height: 32px;
+  border-radius: 7px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-weight: 900;
+}
+
+.tutorial-coach-actions button:last-child {
+  background: linear-gradient(90deg, var(--green), var(--lime));
+  color: #08110c;
+}
+
+.tutorial-highlight {
+  position: relative;
+  z-index: 72;
+  outline: 2px solid var(--lime);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 8px rgba(184, 242, 92, 0.12), 0 0 28px rgba(78, 212, 155, 0.32);
+}
+
 body:not(.admin-body) .history-popover .history-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1785,9 +1881,17 @@ body:not(.admin-body) .bet-form {
 }
 
 body:not(.admin-body) .bet-form > label:nth-of-type(1) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
   grid-column: 1;
   grid-row: 1;
   align-self: end;
+}
+
+body:not(.admin-body) .bet-form > label:nth-of-type(1) span {
+  white-space: nowrap;
 }
 
 body:not(.admin-body) .bet-form > .chip-row {
@@ -1975,8 +2079,10 @@ body:not(.admin-body) .chip-row button {
 
 body:not(.admin-body) .chip-row button span {
   width: 58%;
+  height: 58%;
   background: #171713;
   box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.16);
+  line-height: 1;
 }
 
 body:not(.admin-body) .bet-form > .switch-line {

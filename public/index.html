@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rocket Crash</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260509-9" />
+    <link rel="stylesheet" href="/styles.css?v=20260509-10" />
   </head>
   <body>
     <div class="app-shell">
@@ -123,7 +123,7 @@
           </div>
         </section>
       </main>
-      <span class="app-version">v20260509-9</span>
+      <span class="app-version">v20260509-10</span>
     </div>
 
     <div id="loginOverlay" class="overlay">
@@ -144,71 +144,23 @@
       </form>
     </div>
 
-    <div id="tutorialOverlay" class="tutorial-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
-      <section class="tutorial-panel">
-        <div class="tutorial-head">
-          <div>
-            <strong>Quick Tutorial</strong>
-            <span id="tutorialProgress">Step 1 / 5</span>
-          </div>
+    <div id="tutorialOverlay" class="tutorial-guide hidden" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+      <section class="tutorial-coach">
+        <div class="tutorial-coach-head">
+          <strong>Quick Tutorial</strong>
+          <span id="tutorialProgress">Step 1 / 5</span>
+        </div>
+        <h2 id="tutorialTitle">Choose a Chip</h2>
+        <p id="tutorialText">Pick a chip amount. This is a simulated round and will not change your balance.</p>
+        <div class="tutorial-coach-actions">
           <button id="tutorialSkip" type="button">Skip</button>
-        </div>
-        <div class="tutorial-copy">
-          <strong id="tutorialTitle">Place a Bet</strong>
-          <p id="tutorialText">Choose a chip and place your bet before launch.</p>
-        </div>
-        <div id="tutorialDemo" class="tutorial-demo">
-          <div class="tutorial-screen">
-            <div class="tutorial-chart-grid"></div>
-            <div id="tutorialTrail" class="tutorial-trail"></div>
-            <div id="tutorialRocket" class="tutorial-rocket" aria-hidden="true">
-              <span></span>
-            </div>
-            <div id="tutorialBurst" class="tutorial-burst" aria-hidden="true"></div>
-            <strong id="tutorialMultiplier" class="tutorial-multiplier">1.00x</strong>
-            <span id="tutorialPhase" class="tutorial-phase">Waiting</span>
-            <div id="tutorialCashoutPop" class="tutorial-cashout-pop hidden">
-              <strong>Cash Out</strong>
-              <span id="tutorialPayout">+17.20</span>
-            </div>
-          </div>
-          <div class="tutorial-controls">
-            <label>
-              <span>Bet Amount</span>
-              <strong id="tutorialBetAmount">10</strong>
-            </label>
-            <div id="tutorialChipRow" class="tutorial-chip-row">
-              <button type="button" data-tutorial-chip="10">10</button>
-              <button type="button" data-tutorial-chip="50">50</button>
-              <button type="button" data-tutorial-chip="100">100</button>
-              <button type="button" data-tutorial-chip="500">500</button>
-            </div>
-            <button id="tutorialAutoToggle" class="tutorial-auto-toggle" type="button">
-              <span>Auto Cashout</span>
-              <strong id="tutorialAutoCashout">Off</strong>
-            </button>
-            <button id="tutorialAction" class="tutorial-primary-action" type="button">Place Bet</button>
-            <p id="tutorialInstruction" class="tutorial-instruction">Choose a chip to begin.</p>
-          </div>
-          <div class="tutorial-round">
-            <div>
-              <span>My Round</span>
-              <strong id="tutorialRoundStatus">No Bet</strong>
-            </div>
-            <div>
-              <span>Players</span>
-              <strong id="tutorialPlayers">0 bets</strong>
-            </div>
-          </div>
-        </div>
-        <div class="tutorial-foot">
-          <button id="tutorialReplay" type="button">Replay</button>
+          <button id="tutorialReplay" type="button">Restart</button>
           <button id="tutorialDone" type="button" disabled>Start Playing</button>
         </div>
       </section>
     </div>
 
     <script src="/runtime-config.js?v=20260507-9"></script>
-    <script src="/app.js?v=20260509-9"></script>
+    <script src="/app.js?v=20260509-10"></script>
   </body>
 </html>

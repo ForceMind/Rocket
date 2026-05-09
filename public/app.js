@@ -42,23 +42,7 @@ const ui = {
   tutorialDone: $("#tutorialDone"),
   tutorialProgress: $("#tutorialProgress"),
   tutorialTitle: $("#tutorialTitle"),
-  tutorialText: $("#tutorialText"),
-  tutorialDemo: $("#tutorialDemo"),
-  tutorialTrail: $("#tutorialTrail"),
-  tutorialRocket: $("#tutorialRocket"),
-  tutorialBurst: $("#tutorialBurst"),
-  tutorialMultiplier: $("#tutorialMultiplier"),
-  tutorialPhase: $("#tutorialPhase"),
-  tutorialCashoutPop: $("#tutorialCashoutPop"),
-  tutorialPayout: $("#tutorialPayout"),
-  tutorialBetAmount: $("#tutorialBetAmount"),
-  tutorialChipRow: $("#tutorialChipRow"),
-  tutorialAutoToggle: $("#tutorialAutoToggle"),
-  tutorialAutoCashout: $("#tutorialAutoCashout"),
-  tutorialAction: $("#tutorialAction"),
-  tutorialInstruction: $("#tutorialInstruction"),
-  tutorialRoundStatus: $("#tutorialRoundStatus"),
-  tutorialPlayers: $("#tutorialPlayers")
+  tutorialText: $("#tutorialText")
 };
 
 const runtimeConfig = window.ROCKET_CONFIG || {};
@@ -94,6 +78,7 @@ let tutorialTimers = [];
 let tutorialAnimationFrame = null;
 let tutorialCompleteInFlight = false;
 let tutorialState = null;
+let preferenceTimer = null;
 let stateRefreshInFlight = false;
 let lastStateRefreshAt = 0;
 
@@ -108,6 +93,11 @@ function formatMultiplier(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "--";
   return `${Math.max(1, number).toFixed(2)}x`;
+}
+
+function formatInputMultiplier(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(1.01, number).toFixed(2) : "2.00";
 }
 
 function formatChip(value) {
@@ -354,6 +344,30 @@ async function markTutorialComplete() {
   }
 }
 
+function schedulePreferenceSave() {
+  if (!session?.playerId || isTutorialActive()) return;
+  clearTimeout(preferenceTimer);
+  preferenceTimer = setTimeout(async () => {
+    const value = Number(ui.autoInput.value);
+    if (!Number.isFinite(value) || value < 1.01) return;
+    try {
+      const data = await api("/api/player/preferences", {
+        method: "POST",
+        body: {
+          playerId: session.playerId,
+          defaultAutoCashout: value
+        }
+      });
+      snapshot = data.state || snapshot;
+      if (data.player && snapshot) {
+        snapshot.player = data.player;
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, 500);
+}
+
 function clearTutorialTimers() {
   for (const timer of tutorialTimers) clearTimeout(timer);
   tutorialTimers = [];
@@ -368,141 +382,53 @@ function scheduleTutorial(delayMs, fn) {
   tutorialTimers.push(timer);
 }
 
-function setTutorialRocket(progress) {
-  if (!ui.tutorialRocket) return;
-  const value = clamp(progress, 0, 1);
-  if (tutorialState) tutorialState.progress = value;
-  ui.tutorialRocket.style.left = `${12 + value * 66}%`;
-  ui.tutorialRocket.style.bottom = `${14 + value * 50}%`;
-  if (ui.tutorialTrail) {
-    ui.tutorialTrail.style.transform = `rotate(-34deg) scaleX(${0.12 + value * 0.88})`;
-  }
+function isTutorialActive() {
+  return Boolean(tutorialState?.active);
 }
 
-function setTutorialCopy(step, title, text, instruction = "") {
+function setTutorialCopy(step, total, title, text) {
   if (!ui.tutorialTitle) return;
-  ui.tutorialProgress.textContent = `Step ${step} / 6`;
+  ui.tutorialProgress.textContent = `Step ${step} / ${total}`;
   ui.tutorialTitle.textContent = title;
   ui.tutorialText.textContent = text;
-  if (ui.tutorialInstruction) {
-    ui.tutorialInstruction.textContent = instruction;
-  }
 }
 
-function renderTutorialControls() {
-  if (!ui.tutorialDemo || !tutorialState) return;
-  ui.tutorialBetAmount.textContent = tutorialState.amount ? formatChip(tutorialState.amount) : "Pick";
-  ui.tutorialAutoCashout.textContent = tutorialState.autoEnabled ? "2.00x" : "Off";
-  ui.tutorialAutoToggle?.classList.toggle("on", Boolean(tutorialState.autoEnabled));
-  if (ui.tutorialAutoToggle) {
-    ui.tutorialAutoToggle.disabled = !tutorialState.autoToggleEnabled;
-  }
-  ui.tutorialDone.disabled = !tutorialState.complete;
-
-  ui.tutorialChipRow?.querySelectorAll("[data-tutorial-chip]").forEach((button) => {
-    const selected = Number(button.dataset.tutorialChip) === tutorialState.amount;
-    button.classList.toggle("selected", selected);
-    button.disabled = !tutorialState.chipsEnabled;
+function clearTutorialHighlights() {
+  document.querySelectorAll(".tutorial-highlight").forEach((element) => {
+    element.classList.remove("tutorial-highlight");
   });
 }
 
-function setTutorialStatus({
-  phase = "Waiting",
-  multiplier = 1,
-  action = "Place Bet",
-  actionMode = tutorialState?.actionMode || "none",
-  actionDisabled = false,
-  status = "No Bet",
-  players = "0 bets",
-  payout = "+17.20",
-  cashout = false,
-  crashed = false,
-  complete = false,
-  instruction
-} = {}) {
-  if (!ui.tutorialDemo || !tutorialState) return;
-  tutorialState.multiplier = Number(multiplier || tutorialState.multiplier || 1);
-  tutorialState.actionMode = actionMode;
-  tutorialState.complete = Boolean(complete);
-  ui.tutorialPhase.textContent = phase;
-  ui.tutorialMultiplier.textContent = formatMultiplier(multiplier);
-  ui.tutorialAction.textContent = action;
-  ui.tutorialAction.disabled = actionDisabled;
-  ui.tutorialRoundStatus.textContent = status;
-  ui.tutorialPlayers.textContent = players;
-  ui.tutorialPayout.textContent = payout;
-  if (instruction !== undefined && ui.tutorialInstruction) {
-    ui.tutorialInstruction.textContent = instruction;
-  }
-  ui.tutorialCashoutPop.classList.toggle("hidden", !cashout);
-  ui.tutorialBurst.classList.toggle("show", crashed);
-  ui.tutorialDemo.classList.toggle("complete", complete);
-  ui.tutorialAction.classList.toggle("cashout-mode", action.includes("Cash Out"));
-  renderTutorialControls();
-}
-
-function animateTutorialFlight({
-  from = 1,
-  to = 2,
-  duration = 1600,
-  startProgress = 0,
-  endProgress = 0.75,
-  onFrame,
-  onDone
-}) {
-  const startedAt = performance.now();
-
-  function drawFrame(now) {
-    const progress = clamp((now - startedAt) / duration, 0, 1);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const multiplier = Math.floor((from + (to - from) * eased) * 100) / 100;
-    const rocketProgress = startProgress + (endProgress - startProgress) * eased;
-
-    setTutorialRocket(rocketProgress);
-    onFrame?.(multiplier, rocketProgress);
-
-    if (progress < 1) {
-      tutorialAnimationFrame = requestAnimationFrame(drawFrame);
-    } else {
-      tutorialAnimationFrame = null;
-      onDone?.();
-    }
-  }
-
-  tutorialAnimationFrame = requestAnimationFrame(drawFrame);
+function highlightTutorialTarget(selector) {
+  clearTutorialHighlights();
+  if (!selector) return;
+  document.querySelectorAll(selector).forEach((element) => {
+    element.classList.add("tutorial-highlight");
+  });
 }
 
 function resetTutorialDemo() {
   clearTutorialTimers();
+  clearTutorialHighlights();
+  cashoutEffectIds.delete("tutorial_user_bet");
   tutorialState = {
+    active: true,
+    step: "chooseChip",
     amount: null,
-    autoEnabled: false,
-    chipsEnabled: true,
-    autoToggleEnabled: false,
-    actionMode: "none",
+    autoCashout: Number(ui.autoInput.value || snapshot?.player?.defaultAutoCashout || 2),
     multiplier: 1,
-    progress: 0,
-    complete: false
+    cashoutMultiplier: null,
+    cashedPayout: 0,
+    startedAt: null,
+    crashed: false,
+    complete: false,
+    phase: "betting"
   };
-  setTutorialRocket(0);
-  ui.tutorialDemo?.classList.remove("complete");
-  ui.tutorialBurst?.classList.remove("show");
-  ui.tutorialCashoutPop?.classList.add("hidden");
-  setTutorialCopy(
-    1,
-    "Choose a Chip",
-    "Pick the chip amount you want to bet before the rocket launches.",
-    "Click one of the chip buttons."
-  );
-  setTutorialStatus({
-    phase: "Betting",
-    multiplier: 1,
-    action: "Place Bet",
-    actionMode: "none",
-    actionDisabled: true,
-    status: "No Bet",
-    players: "0 bets"
-  });
+  document.body.classList.add("tutorial-active");
+  ui.tutorialOverlay?.classList.remove("hidden");
+  ui.historyPopover?.classList.add("hidden");
+  ui.rulesPopover?.classList.add("hidden");
+  render();
 }
 
 function runTutorialDemo() {
@@ -510,303 +436,273 @@ function runTutorialDemo() {
 }
 
 function handleTutorialChip(amount) {
-  if (!tutorialState?.chipsEnabled) return;
+  if (!isTutorialActive() || !["chooseChip", "placeBet"].includes(tutorialState.step)) return;
   tutorialState.amount = amount;
-  setTutorialCopy(
-    2,
-    "Place Your Bet",
-    "The bet is not active until you press Place Bet.",
-    "Click Place Bet to enter this simulated round."
-  );
-  setTutorialStatus({
-    phase: "Betting",
-    multiplier: 1,
-    action: "Place Bet",
-    actionMode: "placeManualBet",
-    actionDisabled: false,
-    status: "Ready",
-    players: "0 bets"
-  });
+  tutorialState.step = "placeBet";
+  ui.amountInput.value = amount;
+  render();
 }
 
 function placeTutorialManualBet() {
-  tutorialState.chipsEnabled = false;
-  tutorialState.autoToggleEnabled = false;
-  setTutorialStatus({
-    phase: "Betting",
-    multiplier: 1,
-    action: "Launching...",
-    actionMode: "none",
-    actionDisabled: true,
-    status: "Waiting for Launch",
-    players: "1 bet",
-    instruction: "The rocket launches after betting closes."
-  });
-  scheduleTutorial(750, startTutorialManualFlight);
+  if (!isTutorialActive() || tutorialState.step !== "placeBet" || !tutorialState.amount) return;
+  tutorialState.step = "launching";
+  tutorialState.phase = "betting";
+  render();
+  scheduleTutorial(700, startTutorialManualFlight);
 }
 
 function startTutorialManualFlight() {
-  setTutorialCopy(
-    3,
-    "Cash Out Manually",
-    "The multiplier grows while the rocket flies. Cash out before the crash to lock a payout.",
-    "Click Cash Out while the rocket is flying."
-  );
-  animateTutorialFlight({
-    from: 1,
-    to: 2.35,
-    duration: 6500,
-    startProgress: 0.02,
-    endProgress: 0.66,
-    onFrame: (multiplier) => {
-      if (tutorialState.actionMode !== "manualCashout") {
-        tutorialState.actionMode = "manualCashout";
-      }
-      setTutorialStatus({
-        phase: "Flying",
-        multiplier,
-        action: `Cash Out ${formatMultiplier(multiplier)}`,
-        actionMode: "manualCashout",
-        actionDisabled: false,
-        status: "Open",
-        players: "3 bets"
-      });
-    },
-    onDone: () => {
-      if (tutorialState?.actionMode === "manualCashout") {
-        setTutorialStatus({
-          phase: "Flying",
-          multiplier: tutorialState.multiplier,
-          action: `Cash Out ${formatMultiplier(tutorialState.multiplier)}`,
-          actionMode: "manualCashout",
-          actionDisabled: false,
-          status: "Open",
-          players: "3 bets",
-          instruction: "Click Cash Out now. In the real game, waiting too long can lose the bet."
-        });
-      }
-    }
-  });
+  if (!isTutorialActive()) return;
+  tutorialState.step = "cashout";
+  tutorialState.phase = "flying";
+  tutorialState.startedAt = performance.now();
+  function frame(now) {
+    if (!isTutorialActive() || tutorialState.step !== "cashout") return;
+    const elapsed = now - tutorialState.startedAt;
+    const progress = clamp(elapsed / 5200, 0, 1);
+    tutorialState.multiplier = Math.floor((1 + 1.65 * (1 - Math.pow(1 - progress, 2.2))) * 100) / 100;
+    render();
+    tutorialAnimationFrame = requestAnimationFrame(frame);
+  }
+  tutorialAnimationFrame = requestAnimationFrame(frame);
 }
 
 function cashoutTutorialManual() {
-  if (tutorialAnimationFrame) {
-    cancelAnimationFrame(tutorialAnimationFrame);
-    tutorialAnimationFrame = null;
-  }
-  const cashoutMultiplier = Math.max(1.15, tutorialState.multiplier || 1.15);
-  const payout = `+${formatMoney((tutorialState.amount || 10) * cashoutMultiplier)}`;
-  tutorialState.actionMode = "none";
-  setTutorialCopy(
-    4,
-    "Crash Ends the Round",
-    "Your payout is locked. Bets that stay open lose when the rocket explodes.",
-    "Watch the round finish, then set up Auto Cashout."
-  );
-  setTutorialStatus({
-    phase: "Flying",
-    multiplier: cashoutMultiplier,
-    action: "Cashed Out",
-    actionMode: "none",
-    actionDisabled: true,
-    status: `Cashed ${formatMultiplier(cashoutMultiplier)}`,
-    players: "3 bets",
-    payout,
-    cashout: true
-  });
-  scheduleTutorial(700, () => {
-    const startProgress = tutorialState.progress || 0.45;
-    animateTutorialFlight({
-      from: cashoutMultiplier,
-      to: 2.84,
-      duration: 1100,
-      startProgress,
-      endProgress: 0.78,
-      onFrame: (multiplier) => {
-        setTutorialStatus({
-          phase: "Flying",
-          multiplier,
-          action: "Cashed Out",
-          actionMode: "none",
-          actionDisabled: true,
-          status: `Cashed ${formatMultiplier(cashoutMultiplier)}`,
-          players: "3 bets",
-          payout,
-          cashout: true
-        });
-      },
-      onDone: () => {
-        setTutorialStatus({
-          phase: "Crashed",
-          multiplier: 2.84,
-          action: "Round Ended",
-          actionMode: "none",
-          actionDisabled: true,
-          status: `Cashed ${formatMultiplier(cashoutMultiplier)}`,
-          players: "3 bets",
-          payout,
-          crashed: true
-        });
-        scheduleTutorial(1300, prepareTutorialAutoCashout);
-      }
-    });
-  });
-}
-
-function prepareTutorialAutoCashout() {
+  if (!isTutorialActive() || tutorialState.step !== "cashout") return;
   clearTutorialTimers();
-  tutorialState.amount = 10;
-  tutorialState.autoEnabled = false;
-  tutorialState.chipsEnabled = false;
-  tutorialState.autoToggleEnabled = true;
-  tutorialState.actionMode = "none";
-  tutorialState.complete = false;
-  ui.tutorialBurst?.classList.remove("show");
-  ui.tutorialCashoutPop?.classList.add("hidden");
-  setTutorialRocket(0);
-  setTutorialCopy(
-    5,
-    "Turn On Auto Cashout",
-    "Auto Cashout stores a target on the server. The server jumps out automatically at that multiplier.",
-    "Click Auto Cashout, then place the auto bet."
-  );
-  setTutorialStatus({
-    phase: "Betting",
-    multiplier: 1,
-    action: "Place Auto Bet",
-    actionMode: "none",
-    actionDisabled: true,
-    status: "No Bet",
-    players: "0 bets"
+  if (tutorialAnimationFrame) cancelAnimationFrame(tutorialAnimationFrame);
+  tutorialAnimationFrame = null;
+  const cashoutMultiplier = Math.max(1.15, tutorialState.multiplier || 1.15);
+  tutorialState.cashoutMultiplier = Number(cashoutMultiplier.toFixed(2));
+  tutorialState.cashedPayout = (tutorialState.amount || 10) * tutorialState.cashoutMultiplier;
+  tutorialState.step = "crashing";
+  render();
+  spawnCashoutEffect({
+    id: "tutorial_user_bet",
+    displayName: "Yo**",
+    cashoutMultiplier: tutorialState.cashoutMultiplier,
+    payout: tutorialState.cashedPayout
   });
-}
-
-function toggleTutorialAutoCashout() {
-  if (!tutorialState?.autoToggleEnabled) return;
-  tutorialState.autoEnabled = true;
-  setTutorialStatus({
-    phase: "Betting",
-    multiplier: 1,
-    action: "Place Auto Bet",
-    actionMode: "placeAutoBet",
-    actionDisabled: false,
-    status: "Auto at 2.00x",
-    players: "0 bets",
-    instruction: "Now click Place Auto Bet. You will not need to click Cash Out."
-  });
-}
-
-function placeTutorialAutoBet() {
-  tutorialState.autoToggleEnabled = false;
-  setTutorialStatus({
-    phase: "Betting",
-    multiplier: 1,
-    action: "Launching...",
-    actionMode: "none",
-    actionDisabled: true,
-    status: "Auto at 2.00x",
-    players: "1 bet",
-    instruction: "The server will cash out automatically at 2.00x."
-  });
-  scheduleTutorial(700, startTutorialAutoFlight);
-}
-
-function startTutorialAutoFlight() {
-  animateTutorialFlight({
-    from: 1,
-    to: 2,
-    duration: 2100,
-    startProgress: 0.02,
-    endProgress: 0.58,
-    onFrame: (multiplier) => {
-      setTutorialStatus({
-        phase: "Flying",
-        multiplier,
-        action: "Auto Armed",
-        actionMode: "none",
-        actionDisabled: true,
-        status: "Auto at 2.00x",
-        players: "3 bets"
-      });
-    },
-    onDone: () => {
-      setTutorialStatus({
-        phase: "Flying",
-        multiplier: 2,
-        action: "Auto Cashed",
-        actionMode: "none",
-        actionDisabled: true,
-        status: "Cashed 2.00x",
-        players: "3 bets",
-        payout: "+20.00",
-        cashout: true,
-        instruction: "Auto Cashout happened on the server at 2.00x."
-      });
-      scheduleTutorial(700, finishTutorialAutoRound);
+  scheduleTutorial(650, () => {
+    if (!isTutorialActive()) return;
+    const start = tutorialState.multiplier;
+    const startedAt = performance.now();
+    function frame(now) {
+      if (!isTutorialActive() || tutorialState.step !== "crashing") return;
+      const progress = clamp((now - startedAt) / 1300, 0, 1);
+      tutorialState.multiplier = Math.floor((start + (2.84 - start) * progress) * 100) / 100;
+      render();
+      if (progress < 1) {
+        tutorialAnimationFrame = requestAnimationFrame(frame);
+      } else {
+        tutorialState.multiplier = 2.84;
+        tutorialState.phase = "crashed";
+        tutorialState.crashed = true;
+        tutorialState.step = "lossLesson";
+        render();
+        scheduleTutorial(1600, prepareTutorialAutoCashout);
+      }
     }
-  });
-}
-
-function finishTutorialAutoRound() {
-  animateTutorialFlight({
-    from: 2,
-    to: 3.18,
-    duration: 1000,
-    startProgress: tutorialState.progress || 0.58,
-    endProgress: 0.86,
-    onFrame: (multiplier) => {
-      setTutorialStatus({
-        phase: "Flying",
-        multiplier,
-        action: "Auto Cashed",
-        actionMode: "none",
-        actionDisabled: true,
-        status: "Cashed 2.00x",
-        players: "3 bets",
-        payout: "+20.00",
-        cashout: true
-      });
-    },
-    onDone: () => {
-      tutorialState.complete = true;
-      setTutorialCopy(
-        6,
-        "Ready to Play",
-        "You practiced manual cashout and server-side Auto Cashout.",
-        "Click Start Playing to close the tutorial."
-      );
-      setTutorialStatus({
-        phase: "Crashed",
-        multiplier: 3.18,
-        action: "Complete",
-        actionMode: "none",
-        actionDisabled: true,
-        status: "Cashed 2.00x",
-        players: "3 bets",
-        payout: "+20.00",
-        crashed: true,
-        complete: true
-      });
-      markTutorialComplete();
-    }
+    tutorialAnimationFrame = requestAnimationFrame(frame);
   });
 }
 
 function handleTutorialAction() {
-  if (!tutorialState) return;
-  if (tutorialState.actionMode === "placeManualBet") {
+  if (!isTutorialActive()) return;
+  if (tutorialState.step === "placeBet") {
     placeTutorialManualBet();
-  } else if (tutorialState.actionMode === "manualCashout") {
+  } else if (tutorialState.step === "cashout") {
     cashoutTutorialManual();
-  } else if (tutorialState.actionMode === "placeAutoBet") {
-    placeTutorialAutoBet();
+  } else if (tutorialState.step === "autoCashout") {
+    finishTutorial();
   }
+}
+
+function prepareTutorialAutoCashout() {
+  if (!isTutorialActive()) return;
+  tutorialState.step = "autoCashout";
+  tutorialState.complete = true;
+  tutorialState.phase = "crashed";
+  ui.autoToggle.checked = true;
+  ui.autoInput.disabled = false;
+  ui.autoInput.value = formatInputMultiplier(tutorialState.autoCashout || 2);
+  markTutorialComplete();
+  render();
+}
+
+function tutorialBets() {
+  if (!isTutorialActive()) return [];
+  const now = new Date().toISOString();
+  const amount = tutorialState.amount || 10;
+  const bets = [
+    {
+      id: "tutorial_bot_1",
+      roundId: "tutorial_round",
+      playerId: "tutorial_bot_1",
+      displayName: "Lu**",
+      amount,
+      autoCashout: null,
+      status: tutorialState.phase === "crashed" ? "lost" : "open",
+      cashoutMultiplier: null,
+      payout: 0,
+      placedAt: now
+    },
+    {
+      id: "tutorial_bot_2",
+      roundId: "tutorial_round",
+      playerId: "tutorial_bot_2",
+      displayName: "Ra**",
+      amount: 50,
+      autoCashout: 2,
+      status: tutorialState.phase === "crashed" ? "lost" : "open",
+      cashoutMultiplier: null,
+      payout: 0,
+      placedAt: now
+    }
+  ];
+
+  if (["launching", "cashout", "crashing", "lossLesson", "autoCashout"].includes(tutorialState.step)) {
+    const cashed = Boolean(tutorialState.cashoutMultiplier);
+    bets.unshift({
+      id: "tutorial_user_bet",
+      roundId: "tutorial_round",
+      playerId: session?.playerId || "tutorial_player",
+      displayName: "Yo**",
+      username: snapshot?.player?.username || "You",
+      amount,
+      autoCashout: null,
+      status: cashed ? "cashed" : "open",
+      cashoutMultiplier: tutorialState.cashoutMultiplier,
+      payout: cashed ? tutorialState.cashedPayout : 0,
+      placedAt: now
+    });
+  }
+  return bets;
+}
+
+function tutorialRound() {
+  if (!isTutorialActive()) return null;
+  return {
+    id: "tutorial_round",
+    phase: tutorialState.phase,
+    bettingEndsAt: new Date(Date.now() + 5000).toISOString(),
+    nextRoundAt: new Date(Date.now() + 5000).toISOString(),
+    currentMultiplier: tutorialState.multiplier,
+    crashMultiplier: 2.84,
+    bets: tutorialBets(),
+    curve: snapshot?.settings?.curve || null
+  };
+}
+
+function tutorialSnapshot() {
+  return {
+    ...(snapshot || {}),
+    player: {
+      ...(snapshot?.player || {}),
+      id: session?.playerId || "tutorial_player",
+      username: snapshot?.player?.username || "Guest",
+      balance: snapshot?.player?.balance || 1000
+    },
+    settings: snapshot?.settings || {},
+    history: [
+      { crashMultiplier: 1.42 },
+      { crashMultiplier: 2.88 },
+      { crashMultiplier: 6.36 },
+      { crashMultiplier: 1.03 }
+    ],
+    myHistory: [],
+    round: tutorialRound()
+  };
+}
+
+function renderTutorialCoach() {
+  if (!isTutorialActive()) return;
+  ui.tutorialOverlay?.classList.remove("hidden");
+  ui.tutorialDone.disabled = !tutorialState.complete;
+  ui.tutorialDone.textContent = tutorialState.complete ? "Start Playing" : "Start Playing";
+
+  if (tutorialState.step === "chooseChip") {
+    setTutorialCopy(1, 5, "Choose a Chip", "Pick a chip amount. This simulated round does not change your real balance.");
+    highlightTutorialTarget("#chipRow");
+  } else if (tutorialState.step === "placeBet") {
+    setTutorialCopy(2, 5, "Place the Bet", "The amount is selected. Press Place Bet to enter the simulated round.");
+    highlightTutorialTarget("#placeBetButton");
+  } else if (tutorialState.step === "launching") {
+    setTutorialCopy(3, 5, "Waiting for Launch", "Your fake bet is in the round. The rocket will launch in a moment.");
+    highlightTutorialTarget(".stage-panel");
+  } else if (tutorialState.step === "cashout") {
+    setTutorialCopy(3, 5, "Cash Out Before Crash", "The multiplier is rising. Press Cash Out before the rocket explodes to lock the payout.");
+    highlightTutorialTarget("#placeBetButton");
+  } else if (tutorialState.step === "crashing") {
+    setTutorialCopy(4, 5, "Payout Locked", "You cashed out. The round keeps flying until the rocket explodes.");
+    highlightTutorialTarget(".stage-panel");
+  } else if (tutorialState.step === "lossLesson") {
+    setTutorialCopy(4, 5, "Crash Means Loss", "If you had not cashed out before this explosion, your bet would have been lost.");
+    highlightTutorialTarget(".stage-panel");
+  } else {
+    setTutorialCopy(5, 5, "Use Auto Cashout", "Auto Cashout is useful when the network is slow. After you place a normal bet, the server automatically cashes out at your saved target.");
+    highlightTutorialTarget("#autoToggle, #autoInput");
+  }
+}
+
+function renderTutorialView() {
+  const realSnapshot = snapshot;
+  snapshot = tutorialSnapshot();
+  const round = snapshot.round;
+  const currentMultiplier = tutorialState.multiplier;
+  renderChips();
+  ui.playerName.textContent = snapshot.player?.username || "Guest";
+  ui.balance.textContent = formatMoney(snapshot.player?.balance || 0);
+  ui.phaseLabel.textContent = phaseText(round?.phase);
+  ui.phaseLabel.className = `phase-label ${round?.phase || ""}`;
+  ui.roundId.textContent = "tutorial";
+  renderMainReadout(round, currentMultiplier);
+  ui.resultLabel.textContent = tutorialState.phase === "crashed"
+    ? `Crashed at ${formatMultiplier(round.crashMultiplier)}`
+    : tutorialState.phase === "flying"
+      ? "Flying"
+      : "Tutorial round";
+  renderClock(round);
+  renderHistory();
+  renderMyHistory();
+  renderBets();
+  renderMyBet();
+  renderTutorialActions();
+  renderTutorialCoach();
+  snapshot = realSnapshot;
+}
+
+function renderTutorialActions() {
+  ui.amountInput.value = tutorialState.amount || ui.amountInput.value || 10;
+  ui.autoInput.value = formatInputMultiplier(tutorialState.autoCashout || 2);
+  ui.autoInput.disabled = !ui.autoToggle.checked && tutorialState.step !== "autoCashout";
+
+  let label = "Choose Chip";
+  let disabled = true;
+  let cashoutMode = false;
+  if (tutorialState.step === "placeBet") {
+    label = "Place Bet";
+    disabled = false;
+  } else if (tutorialState.step === "launching") {
+    label = "Launching...";
+  } else if (tutorialState.step === "cashout") {
+    label = `Cash Out ${formatMultiplier(tutorialState.multiplier)}`;
+    disabled = false;
+    cashoutMode = true;
+  } else if (tutorialState.step === "crashing" || tutorialState.step === "lossLesson") {
+    label = "Cashed Out";
+  } else if (tutorialState.step === "autoCashout") {
+    label = "Auto Cashout";
+  }
+  ui.placeBetButton.dataset.mode = "tutorial";
+  ui.placeBetButton.textContent = label;
+  ui.placeBetButton.disabled = disabled;
+  ui.placeBetButton.classList.toggle("cashout-mode", cashoutMode);
 }
 
 function openTutorial(force = false) {
   if (!ui.tutorialOverlay || !session?.playerId) return;
   if (!force && hasCompletedTutorial()) return;
-  ui.tutorialOverlay.classList.remove("hidden");
   runTutorialDemo();
 }
 
@@ -817,7 +713,15 @@ function openTutorialIfNeeded() {
 function closeTutorial(markComplete = true) {
   clearTutorialTimers();
   if (markComplete) markTutorialComplete();
+  clearTutorialHighlights();
+  document.body.classList.remove("tutorial-active");
+  tutorialState = null;
   ui.tutorialOverlay?.classList.add("hidden");
+  render();
+}
+
+function finishTutorial() {
+  closeTutorial(true);
 }
 
 async function login(username) {
@@ -827,6 +731,8 @@ async function login(username) {
   });
   saveSession(data.player);
   snapshot = data.state;
+  const savedAutoCashout = Number(data.player?.defaultAutoCashout || data.state?.player?.defaultAutoCashout || 2);
+  ui.autoInput.value = formatInputMultiplier(savedAutoCashout);
   ui.overlay.classList.add("hidden");
   connectEvents();
   render();
@@ -1195,6 +1101,10 @@ function spawnCashoutEffect(bet) {
 }
 
 function render() {
+  if (isTutorialActive()) {
+    renderTutorialView();
+    return;
+  }
   const player = snapshot?.player;
   const round = snapshot?.round;
   trackCashoutEffects(round);
@@ -1265,8 +1175,8 @@ function setupCanvas() {
     const rect = ui.canvas.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
-    const round = snapshot?.round;
-    const multiplier = Number(displayMultiplier(round));
+    const round = isTutorialActive() ? tutorialRound() : snapshot?.round;
+    const multiplier = isTutorialActive() ? Number(tutorialState.multiplier || 1) : Number(displayMultiplier(round));
 
     ctx.clearRect(0, 0, width, height);
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -1520,6 +1430,10 @@ async function submitCashout() {
 
 ui.betForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (isTutorialActive()) {
+    handleTutorialAction();
+    return;
+  }
   const mode = ui.placeBetButton.dataset.mode;
   if (mode === "cashout") {
     await submitCashout();
@@ -1531,11 +1445,35 @@ ui.betForm.addEventListener("submit", async (event) => {
 ui.chipRow.addEventListener("click", (event) => {
   const button = event.target.closest("[data-chip]");
   if (!button) return;
+  if (isTutorialActive()) {
+    handleTutorialChip(Number(button.dataset.chip));
+    return;
+  }
   ui.amountInput.value = button.dataset.chip;
 });
 
 ui.autoToggle.addEventListener("change", () => {
+  if (isTutorialActive()) {
+    ui.autoInput.disabled = !ui.autoToggle.checked;
+    if (tutorialState) tutorialState.autoCashout = Number(ui.autoInput.value || 2);
+    render();
+    return;
+  }
   ui.autoInput.disabled = !ui.autoToggle.checked;
+  if (ui.autoToggle.checked) schedulePreferenceSave();
+});
+
+ui.autoInput.addEventListener("input", () => {
+  if (isTutorialActive()) {
+    if (tutorialState) tutorialState.autoCashout = Number(ui.autoInput.value || 2);
+    return;
+  }
+  schedulePreferenceSave();
+});
+
+ui.autoInput.addEventListener("change", () => {
+  ui.autoInput.value = formatInputMultiplier(ui.autoInput.value);
+  if (!isTutorialActive()) schedulePreferenceSave();
 });
 
 ui.historyButton.addEventListener("click", () => {
@@ -1571,22 +1509,10 @@ ui.tutorialReplay?.addEventListener("click", () => {
   runTutorialDemo();
 });
 
-ui.tutorialChipRow?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-tutorial-chip]");
-  if (!button) return;
-  handleTutorialChip(Number(button.dataset.tutorialChip));
-});
-
-ui.tutorialAutoToggle?.addEventListener("click", () => {
-  toggleTutorialAutoCashout();
-});
-
-ui.tutorialAction?.addEventListener("click", () => {
-  handleTutorialAction();
-});
-
 setInterval(() => {
-  if (snapshot) {
+  if (isTutorialActive()) {
+    renderTutorialView();
+  } else if (snapshot) {
     renderClock(snapshot.round);
     renderMainReadout(snapshot.round);
     renderActions();
