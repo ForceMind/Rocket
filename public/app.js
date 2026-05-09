@@ -449,6 +449,7 @@ function resetTutorialDemo() {
     cashoutMultiplier: null,
     cashedPayout: 0,
     startedAt: null,
+    launchEndsAt: null,
     crashed: false,
     complete: false,
     phase: "betting"
@@ -474,16 +475,20 @@ function handleTutorialChip(amount) {
 
 function placeTutorialManualBet() {
   if (!isTutorialActive() || tutorialState.step !== "placeBet" || !tutorialState.amount) return;
+  clearTutorialTimers();
   tutorialState.step = "launching";
   tutorialState.phase = "betting";
+  tutorialState.launchEndsAt = Date.now() + 3000;
+  tutorialState.multiplier = 1;
   render();
-  scheduleTutorial(700, startTutorialManualFlight);
+  scheduleTutorial(3100, startTutorialManualFlight);
 }
 
 function startTutorialManualFlight() {
   if (!isTutorialActive()) return;
   tutorialState.step = "cashout";
   tutorialState.phase = "flying";
+  tutorialState.launchEndsAt = null;
   tutorialState.startedAt = performance.now();
   function frame(now) {
     if (!isTutorialActive() || tutorialState.step !== "cashout") return;
@@ -523,7 +528,6 @@ function cashoutTutorialManual() {
         tutorialState.crashed = true;
         tutorialState.step = "lossLesson";
         render();
-        scheduleTutorial(1600, prepareTutorialAutoCashout);
       }
     }
     tutorialAnimationFrame = requestAnimationFrame(frame);
@@ -605,10 +609,11 @@ function tutorialBets() {
 
 function tutorialRound() {
   if (!isTutorialActive()) return null;
+  const launchEndsAt = tutorialState.launchEndsAt || Date.now() + 3000;
   return {
     id: "tutorial_round",
     phase: tutorialState.phase,
-    bettingEndsAt: Date.now() + 5000,
+    bettingEndsAt: launchEndsAt,
     nextRoundAt: Date.now() + 5000,
     currentMultiplier: tutorialState.multiplier,
     crashMultiplier: 2.84,
@@ -644,11 +649,14 @@ function tutorialSnapshot() {
 function renderTutorialCoach() {
   if (!isTutorialActive()) return;
   ui.tutorialOverlay?.classList.remove("hidden");
-  ui.tutorialOverlay.dataset.position = ["chooseChip", "placeBet", "cashout", "autoCashout"].includes(tutorialState.step)
+  ui.tutorialOverlay.dataset.position = ["chooseChip", "placeBet", "launching", "cashout", "autoCashout"].includes(tutorialState.step)
     ? "top"
     : "bottom";
-  ui.tutorialDone.disabled = !tutorialState.complete;
-  ui.tutorialDone.textContent = tutorialState.complete ? "Start Playing" : "Start Playing";
+  const showNext = tutorialState.step === "lossLesson";
+  const showDone = tutorialState.complete;
+  ui.tutorialDone.hidden = !showNext && !showDone;
+  ui.tutorialDone.disabled = !showNext && !showDone;
+  ui.tutorialDone.textContent = showNext ? "Next" : "Start Playing";
 
   if (tutorialState.step === "chooseChip") {
     setTutorialCopy(1, 5, "Choose a Chip", "Pick a chip amount. This simulated round does not change your real balance.");
@@ -657,7 +665,7 @@ function renderTutorialCoach() {
     setTutorialCopy(2, 5, "Place the Bet", "The amount is selected. Press Place Bet to enter the simulated round.");
     highlightTutorialTarget("#placeBetButton");
   } else if (tutorialState.step === "launching") {
-    setTutorialCopy(3, 5, "Waiting for Launch", "Your fake bet is in the round. The rocket will launch in a moment.");
+    setTutorialCopy(3, 5, "Waiting for Launch", "Watch the 3 second countdown. The simulated rocket launches when it reaches zero.");
     highlightTutorialTarget(".stage-panel");
   } else if (tutorialState.step === "cashout") {
     setTutorialCopy(3, 5, "Cash Out Before Crash", "The multiplier is rising. Press Cash Out before the rocket explodes to lock the payout.");
@@ -679,6 +687,7 @@ function renderTutorialView() {
   snapshot = tutorialSnapshot();
   const round = snapshot.round;
   const currentMultiplier = tutorialState.multiplier;
+  document.body.classList.toggle("tutorial-launching", tutorialState.step === "launching");
   renderChips();
   if (ui.cashoutEffects) ui.cashoutEffects.innerHTML = "";
   ui.playerName.textContent = snapshot.player?.username || "Guest";
@@ -694,7 +703,9 @@ function renderTutorialView() {
     ? `Crashed at ${formatMultiplier(round.crashMultiplier)}`
     : tutorialState.phase === "flying"
       ? "Flying"
-      : "Tutorial round";
+      : tutorialState.step === "launching"
+        ? "Waiting for Launch"
+        : "Tutorial round";
   renderClock(round);
   renderHistory();
   renderMyHistory();
@@ -717,7 +728,7 @@ function renderTutorialActions() {
     label = "Place Bet";
     disabled = false;
   } else if (tutorialState.step === "launching") {
-    label = "Launching...";
+    label = `Launching in ${secondsUntil(tutorialState.launchEndsAt)}s`;
   } else if (tutorialState.step === "cashout") {
     label = `Cash Out ${formatMultiplier(tutorialState.multiplier)}`;
     disabled = false;
@@ -747,7 +758,7 @@ function closeTutorial(markComplete = true) {
   clearTutorialTimers();
   if (markComplete) markTutorialComplete();
   clearTutorialHighlights();
-  document.body.classList.remove("tutorial-active");
+  document.body.classList.remove("tutorial-active", "tutorial-launching");
   tutorialState = null;
   ui.tutorialOverlay?.classList.add("hidden");
   render();
@@ -1548,7 +1559,12 @@ ui.tutorialSkip?.addEventListener("click", () => {
 });
 
 ui.tutorialDone?.addEventListener("click", () => {
-  closeTutorial(true);
+  if (!isTutorialActive()) return;
+  if (tutorialState.step === "lossLesson") {
+    prepareTutorialAutoCashout();
+  } else if (tutorialState.complete) {
+    closeTutorial(true);
+  }
 });
 
 ui.tutorialReplay?.addEventListener("click", () => {
