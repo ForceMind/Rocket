@@ -51,7 +51,16 @@ GET /api/state?playerId=...
 {
   "now": 1778130000000,
   "settings": {
-    "curveSpeedMs": 6500,
+    "curve": {
+      "type": "piecewise-exp",
+      "targetMultiplier": 20,
+      "earlyTargetMs": 35000,
+      "earlyPower": 2.4,
+      "lateSpeedMs": 12000
+    },
+    "curveEarlyTargetMs": 35000,
+    "curveEarlyPower": 2.4,
+    "curveLateSpeedMs": 12000,
     "maxDisplayMultiplier": 300
   },
   "player": {},
@@ -65,7 +74,10 @@ GET /api/state?playerId=...
 
 - `playerId` 可选。
 - 有 `playerId` 时返回当前玩家信息和本人历史。
-- `settings.curveSpeedMs` 用于前端本地计算飞行倍率。
+- `settings.curve` 用于前端本地计算飞行倍率；默认 35 秒到 20x，20x 后加速。
+- `settings.curveEarlyTargetMs` 越大，20x 以前越慢。
+- `settings.curveEarlyPower` 越大，起步越慢，建议 2.0 到 3.2。
+- `settings.curveLateSpeedMs` 越小，20x 后高倍越快。
 - `settings.maxDisplayMultiplier` 用于前端显示保护，避免异常时间差导致 `Infinityx`。
 - 玩家端 WebSocket 公网地址优先来自 `public/runtime-config.js` 中的 `window.ROCKET_CONFIG.publicWsUrl`。该值为空时，玩家端按当前页面地址自动生成 WebSocket 地址。
 
@@ -284,6 +296,9 @@ POST /api/admin/settings
   "houseEdgeBps": 150,
   "instantCrashBps": 150,
   "maxCrashMultiplier": 100,
+  "curveEarlyTargetMs": 35000,
+  "curveEarlyPower": 2.4,
+  "curveLateSpeedMs": 12000,
   "botMinCount": 14,
   "botMaxCount": 34,
   "botBetIntervalMinMs": 100,
@@ -303,6 +318,9 @@ POST /api/admin/settings
 - `botBetIntervalMinMs <= botBetIntervalMaxMs`
 - `botOnlyHighFlightMin <= botOnlyHighFlightMax`
 - `minBet <= maxBet`
+- `curveEarlyTargetMs` 范围是 `10000` 到 `120000`，表示约多少毫秒到 20x。
+- `curveEarlyPower` 范围是 `1` 到 `5`，越大越慢启动。
+- `curveLateSpeedMs` 范围是 `3000` 到 `60000`，越小 20x 后越快。
 - 下注档位会被过滤到下注上下限内。
 
 ### 4.4 调整玩家余额

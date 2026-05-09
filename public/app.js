@@ -62,7 +62,10 @@ const ui = {
 };
 
 const runtimeConfig = window.ROCKET_CONFIG || {};
-const DEFAULT_CURVE_SPEED_MS = 6500;
+const CURVE_TARGET_MULTIPLIER = 20;
+const DEFAULT_CURVE_EARLY_TARGET_MS = 35000;
+const DEFAULT_CURVE_EARLY_POWER = 2.4;
+const DEFAULT_CURVE_LATE_SPEED_MS = 12000;
 const DEFAULT_MAX_DISPLAY_MULTIPLIER = 1000;
 const DISPLAY_LAG_MS = 1000;
 const HIGH_LATENCY_THRESHOLD_MS = 1000;
@@ -128,6 +131,41 @@ function safeRoundMultiplier(value, fallback = 1) {
   return Number.isFinite(number) && number >= 1 ? number : fallback;
 }
 
+function curveConfig(round = snapshot?.round) {
+  const source = round?.curve || snapshot?.settings?.curve || {};
+  const earlyTargetMs = Number(source.earlyTargetMs || snapshot?.settings?.curveEarlyTargetMs || DEFAULT_CURVE_EARLY_TARGET_MS);
+  const earlyPower = Number(source.earlyPower || snapshot?.settings?.curveEarlyPower || DEFAULT_CURVE_EARLY_POWER);
+  const lateSpeedMs = Number(source.lateSpeedMs || snapshot?.settings?.curveLateSpeedMs || DEFAULT_CURVE_LATE_SPEED_MS);
+  const targetMultiplier = Number(source.targetMultiplier || CURVE_TARGET_MULTIPLIER);
+  return {
+    earlyTargetMs: Number.isFinite(earlyTargetMs) && earlyTargetMs > 0 ? earlyTargetMs : DEFAULT_CURVE_EARLY_TARGET_MS,
+    earlyPower: Number.isFinite(earlyPower) && earlyPower > 0 ? earlyPower : DEFAULT_CURVE_EARLY_POWER,
+    lateSpeedMs: Number.isFinite(lateSpeedMs) && lateSpeedMs > 0 ? lateSpeedMs : DEFAULT_CURVE_LATE_SPEED_MS,
+    targetMultiplier: Number.isFinite(targetMultiplier) && targetMultiplier > 1 ? targetMultiplier : CURVE_TARGET_MULTIPLIER
+  };
+}
+
+function multiplierFromElapsed(elapsedMs, round = snapshot?.round) {
+  const elapsed = Math.max(0, Number(elapsedMs || 0));
+  const config = curveConfig(round);
+  let raw;
+  if (elapsed <= config.earlyTargetMs) {
+    raw = 1 + (config.targetMultiplier - 1) * Math.pow(elapsed / config.earlyTargetMs, config.earlyPower);
+  } else {
+    raw = config.targetMultiplier * Math.exp((elapsed - config.earlyTargetMs) / config.lateSpeedMs);
+  }
+  return Number.isFinite(raw) ? raw : maxDisplayMultiplier();
+}
+
+function elapsedForMultiplier(multiplier, round = snapshot?.round) {
+  const value = Math.max(1, Number(multiplier || 1));
+  const config = curveConfig(round);
+  if (value <= config.targetMultiplier) {
+    return config.earlyTargetMs * Math.pow((value - 1) / (config.targetMultiplier - 1), 1 / config.earlyPower);
+  }
+  return config.earlyTargetMs + config.lateSpeedMs * Math.log(value / config.targetMultiplier);
+}
+
 function refreshState(reason = "sync") {
   if (!session?.playerId || stateRefreshInFlight) return;
   const now = Date.now();
@@ -152,10 +190,9 @@ function displayMultiplier(round = snapshot?.round) {
   if (round.phase !== "flying" || !round.launchAt) {
     return safeRoundMultiplier(round.currentMultiplier || round.crashMultiplier || 1);
   }
-  const speedMs = Number(round.curveSpeedMs || snapshot?.settings?.curveSpeedMs || DEFAULT_CURVE_SPEED_MS);
   const launchAt = Number(round.launchAt);
   const fallback = safeRoundMultiplier(round.currentMultiplier || 1);
-  if (!Number.isFinite(speedMs) || speedMs <= 0 || !Number.isFinite(launchAt)) {
+  if (!Number.isFinite(launchAt)) {
     refreshState("invalid-flight-time");
     return fallback;
   }
@@ -167,15 +204,13 @@ function displayMultiplier(round = snapshot?.round) {
   }
 
   const displayCap = maxDisplayMultiplier();
-  const maxExponent = Math.log(displayCap);
-  const staleAtMs = maxExponent * speedMs + STALE_FLIGHT_GRACE_MS;
+  const staleAtMs = elapsedForMultiplier(displayCap, round) + STALE_FLIGHT_GRACE_MS;
   if (trueElapsed > staleAtMs) {
     refreshState("stale-flight");
   }
 
   const displayElapsed = Math.max(0, trueElapsed - DISPLAY_LAG_MS);
-  const exponent = Math.min(displayElapsed / speedMs, maxExponent);
-  const raw = Math.exp(exponent);
+  const raw = Math.min(multiplierFromElapsed(displayElapsed, round), displayCap);
   if (!Number.isFinite(raw)) {
     refreshState("overflow");
     return displayCap;
@@ -852,7 +887,7 @@ function handleRealtimeEvent(type, data) {
     if (data.settings) snapshot.settings = data.settings;
   } else if (type === "flight_start") {
     snapshot.round = data.round;
-    snapshot.round.curveSpeedMs = data.curve?.speedMs || snapshot.settings?.curveSpeedMs || 6500;
+    snapshot.round.curve = data.curve || snapshot.settings?.curve || null;
   } else if (type === "bet_placed") {
     if (data.round) {
       snapshot.round = data.round;

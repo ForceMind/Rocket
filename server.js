@@ -14,7 +14,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
-const CURVE_SPEED_MS = 6500;
+const CURVE_TARGET_MULTIPLIER = 20;
 
 function normalizeAdminPath(value) {
   const raw = String(value || "/manage").trim();
@@ -36,6 +36,9 @@ const DEFAULT_SETTINGS = {
   houseEdgeBps: 150,
   instantCrashBps: 150,
   maxCrashMultiplier: 100,
+  curveEarlyTargetMs: 35000,
+  curveEarlyPower: 2.4,
+  curveLateSpeedMs: 12000,
   botsEnabled: true,
   botMinCount: 14,
   botMaxCount: 34,
@@ -402,6 +405,32 @@ function applyBotOnlyHighFlight() {
   return true;
 }
 
+function curveConfig(settings = db.settings) {
+  const earlyTargetMs = clamp(Number(settings.curveEarlyTargetMs ?? settings.earlyTargetMs ?? DEFAULT_SETTINGS.curveEarlyTargetMs), 10000, 120000);
+  const earlyPower = clamp(Number(settings.curveEarlyPower ?? settings.earlyPower ?? DEFAULT_SETTINGS.curveEarlyPower), 1, 5);
+  const lateSpeedMs = clamp(Number(settings.curveLateSpeedMs ?? settings.lateSpeedMs ?? DEFAULT_SETTINGS.curveLateSpeedMs), 3000, 60000);
+  return {
+    type: "piecewise-exp",
+    targetMultiplier: CURVE_TARGET_MULTIPLIER,
+    earlyTargetMs,
+    earlyPower,
+    lateSpeedMs
+  };
+}
+
+function multiplierFromElapsed(elapsedMs, settings = db.settings) {
+  const elapsed = Math.max(0, Number(elapsedMs || 0));
+  const config = curveConfig(settings);
+  let raw;
+  if (elapsed <= config.earlyTargetMs) {
+    const progress = elapsed / config.earlyTargetMs;
+    raw = 1 + (config.targetMultiplier - 1) * Math.pow(progress, config.earlyPower);
+  } else {
+    raw = config.targetMultiplier * Math.exp((elapsed - config.earlyTargetMs) / config.lateSpeedMs);
+  }
+  return Number.isFinite(raw) ? raw : Number.MAX_SAFE_INTEGER;
+}
+
 function createBotPlan(createdAt) {
   if (!db.settings.botsEnabled) return [];
   const minCount = Math.max(0, Number(db.settings.botMinCount || 0));
@@ -472,7 +501,7 @@ function multiplierAt(timestamp = Date.now()) {
     return 1;
   }
   const elapsed = Math.max(0, timestamp - currentRound.launchAt);
-  const raw = Math.exp(elapsed / CURVE_SPEED_MS);
+  const raw = multiplierFromElapsed(elapsed, currentRound.curve || db.settings);
   const cap = Math.max(db.settings.maxCrashMultiplier, currentRound.crashMultiplier || 1);
   const capped = clamp(raw, 1, cap);
   return Math.floor(capped * 100) / 100;
@@ -521,9 +550,10 @@ function startFlying() {
   currentRound.phase = "flying";
   currentRound.launchAt = Date.now();
   currentRound.currentMultiplier = 1;
+  currentRound.curve = curveConfig();
   broadcastEvent("flight_start", {
     round: publicRound(),
-    curve: { type: "exp", speedMs: CURVE_SPEED_MS }
+    curve: currentRound.curve
   });
 }
 
@@ -716,6 +746,7 @@ function publicRound(round = currentRound) {
     botOnlyHighFlight: round.botOnlyHighFlight,
     poolCapped: Boolean(round.poolCapped),
     poolCapMultiplier: round.poolCapMultiplier,
+    curve: round.curve || curveConfig(),
     bets: round.bets.map(publicBet)
   };
   if (round.phase === "crashed") {
@@ -1010,7 +1041,10 @@ function publicSettings() {
     bettingDurationMs: db.settings.bettingDurationMs,
     roundPauseMs: db.settings.roundPauseMs,
     paused: db.settings.paused,
-    curveSpeedMs: CURVE_SPEED_MS,
+    curve: curveConfig(),
+    curveEarlyTargetMs: db.settings.curveEarlyTargetMs,
+    curveEarlyPower: db.settings.curveEarlyPower,
+    curveLateSpeedMs: db.settings.curveLateSpeedMs,
     maxDisplayMultiplier,
     publicWsUrl: ""
   };
@@ -1261,6 +1295,8 @@ async function handleApi(req, res, url) {
       houseEdgeBps: [0, 2500],
       instantCrashBps: [0, 10000],
       maxCrashMultiplier: [2, 1000],
+      curveEarlyTargetMs: [10000, 120000],
+      curveLateSpeedMs: [3000, 60000],
       botMinCount: [0, 80],
       botMaxCount: [0, 120],
       botBetIntervalMinMs: [50, 5000],
@@ -1277,6 +1313,14 @@ async function handleApi(req, res, url) {
         throw httpError(400, `${key} 无效`);
       }
       db.settings[key] = Math.round(clamp(value, range[0], range[1]));
+    }
+
+    if (body.curveEarlyPower !== undefined) {
+      const value = Number(body.curveEarlyPower);
+      if (!Number.isFinite(value)) {
+        throw httpError(400, "curveEarlyPower 无效");
+      }
+      db.settings.curveEarlyPower = Number(clamp(value, 1, 5).toFixed(2));
     }
 
     if (body.minBet !== undefined) {

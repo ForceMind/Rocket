@@ -48,6 +48,9 @@ data/db.json
 | `houseEdgeBps` | 平台优势，100 bps = 1% |
 | `instantCrashBps` | 1.00x 即爆概率 |
 | `maxCrashMultiplier` | 普通随机爆点上限 |
+| `curveEarlyTargetMs` | 飞行曲线约多少毫秒到 20x |
+| `curveEarlyPower` | 20x 前慢启动程度 |
+| `curveLateSpeedMs` | 20x 后加速速度 |
 | `botMinCount` / `botMaxCount` | 每局机器人数量范围 |
 | `botBetIntervalMinMs` / `botBetIntervalMaxMs` | 机器人下注间隔范围 |
 | `botMinBetCents` / `botMaxBetCents` | 机器人下注金额范围 |
@@ -130,7 +133,7 @@ when Date.now() >= bettingEndsAt
   broadcast flight_start
 
 flying
-  currentMultiplier = exp(elapsedMs / 6500)
+  currentMultiplier = curveMultiplier(elapsedMs)
   process auto cashouts
   if currentMultiplier >= crashMultiplier
     finishRound()
@@ -146,19 +149,55 @@ crashed
 
 ## 5. 飞行倍率公式
 
-服务端和前端使用同一条倍率公式：
+服务端和前端使用同一条分段倍率公式，默认目标是让火箭约 35 秒飞到 20x，20x 之后再加速：
 
 ```text
-currentMultiplier = exp(elapsedMs / 6500)
+targetMultiplier = 20
+earlyTargetMs = curveEarlyTargetMs
+earlyPower = curveEarlyPower
+lateSpeedMs = curveLateSpeedMs
+
+if elapsedMs <= earlyTargetMs:
+  currentMultiplier = 1 + (targetMultiplier - 1) * (elapsedMs / earlyTargetMs) ^ earlyPower
+else:
+  currentMultiplier = targetMultiplier * exp((elapsedMs - earlyTargetMs) / lateSpeedMs)
+
 currentMultiplier = floor(currentMultiplier * 100) / 100
 ```
 
 解释：
 
 - `elapsedMs` 是火箭起飞后经过的毫秒数。
-- `6500` 是速度参数，越小涨得越快。
-- `exp` 是指数增长，前期慢，后期越来越快。
+- 20x 前使用幂函数，让前段明显慢下来。
+- 20x 后使用指数函数，让高倍不要拖太久。
 - `floor(... * 100) / 100` 是向下保留两位小数。
+
+默认参数：
+
+```text
+curveEarlyTargetMs = 35000
+curveEarlyPower = 2.4
+curveLateSpeedMs = 12000
+```
+
+默认效果大约是：
+
+| 倍率 | 时间 |
+| --- | --- |
+| 2x | 10 秒 |
+| 5x | 18 秒 |
+| 10x | 26 秒 |
+| 20x | 35 秒 |
+| 50x | 46 秒 |
+| 100x | 54 秒 |
+| 500x | 74 秒 |
+
+配置方法：
+
+- `curveEarlyTargetMs`：20x 到达时间。越大，20x 以前整体越慢；建议 `30000` 到 `45000`。
+- `curveEarlyPower`：20x 前慢启动程度。越大，1x 到 5x 越慢，但越靠近 20x 会追上；建议 `2.0` 到 `3.2`。
+- `curveLateSpeedMs`：20x 后加速速度。越小，高倍越快；建议 `9000` 到 `16000`。
+- 已经起飞的回合会冻结当局曲线参数，后台保存的新参数从下一次起飞开始完整生效。
 
 爆炸判断：
 
@@ -172,7 +211,7 @@ currentMultiplier >= crashMultiplier
 
 ```text
 displayElapsedMs = max(0, serverNow - launchAt - 1000)
-displayMultiplier = exp(displayElapsedMs / 6500)
+displayMultiplier = curveMultiplier(displayElapsedMs)
 ```
 
 这只影响画面和按钮文案，不影响服务端爆炸、手动提现或自动提现结算。目的在于让画面比服务端权威时间保守一些，降低网络延迟造成的“画面飞过爆点后才收到爆炸”的观感。
