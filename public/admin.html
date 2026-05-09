@@ -107,7 +107,7 @@
           <p class="section-help">参数保存后写入本地 data/db.json。已开始的回合不会全部重算，下一局会完整使用最新配置。</p>
           <form id="settingsForm" class="settings-form">
             <label><span>下注倒计时 ms</span><input name="bettingDurationMs" type="number" /><small>每局开始后允许下注的时间，单位毫秒。</small></label>
-            <label><span>局间等待 ms</span><input name="roundPauseMs" type="number" /><small>爆炸后到下一局开始的等待时间。</small></label>
+            <label><span>爆炸停留 ms</span><input name="roundPauseMs" type="number" disabled /><small>固定 3000ms。爆炸后先保留本局数据，3 秒后清理并开始新一局下注倒计时。</small></label>
             <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /><small>玩家端实时状态刷新间隔，数值越小越顺滑。</small></label>
             <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /><small>真实玩家每局最低下注积分。</small></label>
             <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /><small>真实玩家每局最高下注积分。</small></label>

@@ -40,7 +40,7 @@ data/db.json
 | 字段 | 说明 |
 | --- | --- |
 | `bettingDurationMs` | 每局下注等待时间 |
-| `roundPauseMs` | 爆炸后到下一局的等待时间 |
+| `roundPauseMs` | 兼容展示字段，当前固定为 3000ms 爆炸停留 |
 | `minBetCents` / `maxBetCents` | 真实玩家下注上下限 |
 | `betTiersCents` | 筹码档位 |
 | `demoCreditCents` | 新玩家初始积分 |
@@ -142,7 +142,10 @@ crashed
   settle remaining open bets as lost
   persist round history
   broadcast crash
-  after roundPauseMs create next round
+  keep currentRound and public bets visible for 3000ms
+  then set currentRound = null
+  createRound()
+  new betting countdown starts from the new round's bettingEndsAt
 ```
 
 下注截止时不会再调用机器人补下注。机器人必须在自己的 `placeAt` 到达时下注。

@@ -319,7 +319,6 @@ POST /api/admin/settings
 ```json
 {
   "bettingDurationMs": 7000,
-  "roundPauseMs": 3500,
   "minBet": 10,
   "maxBet": 1000,
   "betTiers": "10,50,100,500,1000",
@@ -353,6 +352,7 @@ POST /api/admin/settings
 - `curveEarlyTargetMs` 范围是 `10000` 到 `120000`，表示约多少毫秒到 20x。
 - `curveEarlyPower` 范围是 `1` 到 `5`，越大越慢启动。
 - `curveLateSpeedMs` 范围是 `3000` 到 `60000`，越小 20x 后越快。
+- `roundPauseMs` 不再作为可保存参数；接口状态里仍会返回兼容展示值 `3000`。爆炸后保留本局 3 秒，然后清理并创建新局，之后才开始新局下注倒计时。
 - 下注档位会被过滤到下注上下限内。
 
 ### 4.4 调整玩家余额

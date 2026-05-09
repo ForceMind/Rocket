@@ -16,6 +16,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const CURVE_TARGET_MULTIPLIER = 20;
 const CURVE_EARLY_LINEAR_WEIGHT = 0.02;
+const CRASH_HOLD_MS = 3000;
 
 function normalizeAdminPath(value) {
   const raw = String(value || "/manage").trim();
@@ -27,7 +28,7 @@ function normalizeAdminPath(value) {
 
 const DEFAULT_SETTINGS = {
   bettingDurationMs: 7000,
-  roundPauseMs: 3500,
+  roundPauseMs: CRASH_HOLD_MS,
   tickRateMs: 100,
   minBetCents: 100,
   maxBetCents: 100000,
@@ -130,8 +131,10 @@ function sha256(value) {
 function normalizeDb(input) {
   const safe = input && typeof input === "object" ? input : {};
   const metricOffsets = safe.metricOffsets && typeof safe.metricOffsets === "object" ? safe.metricOffsets : {};
+  const settings = { ...DEFAULT_SETTINGS, ...(safe.settings || {}) };
+  settings.roundPauseMs = CRASH_HOLD_MS;
   return {
-    settings: { ...DEFAULT_SETTINGS, ...(safe.settings || {}) },
+    settings,
     players: safe.players && typeof safe.players === "object" ? safe.players : {},
     rounds: Array.isArray(safe.rounds) ? safe.rounds : [],
     metricOffsets: {
@@ -583,7 +586,7 @@ function finishRound() {
   currentRound.phase = "crashed";
   currentRound.currentMultiplier = currentRound.crashMultiplier;
   currentRound.crashedAt = crashedAt;
-  currentRound.nextRoundAt = crashedAt + db.settings.roundPauseMs;
+  currentRound.nextRoundAt = crashedAt + CRASH_HOLD_MS;
 
   const humanBets = currentRound.bets.filter((bet) => !bet.isBot);
   const botBets = currentRound.bets.filter((bet) => bet.isBot);
@@ -1048,7 +1051,7 @@ function publicSettings() {
     maxBet: centsToAmount(db.settings.maxBetCents),
     betTiers: db.settings.betTiersCents.map(centsToAmount),
     bettingDurationMs: db.settings.bettingDurationMs,
-    roundPauseMs: db.settings.roundPauseMs,
+    roundPauseMs: CRASH_HOLD_MS,
     paused: db.settings.paused,
     curve: curveConfig(),
     curveEarlyTargetMs: db.settings.curveEarlyTargetMs,
@@ -1316,7 +1319,6 @@ async function handleApi(req, res, url) {
     const previous = { ...db.settings };
     const numericFields = {
       bettingDurationMs: [3000, 30000],
-      roundPauseMs: [1000, 15000],
       tickRateMs: [50, 1000],
       houseEdgeBps: [0, 2500],
       instantCrashBps: [0, 10000],
