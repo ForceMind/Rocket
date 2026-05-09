@@ -859,8 +859,17 @@ function handleRealtimeEvent(type, data) {
     snapshot.round = data.round;
     if (data.settings) snapshot.settings = data.settings;
   } else if (type === "flight_start") {
-    snapshot.round = data.round;
-    snapshot.round.curve = data.curve || snapshot.settings?.curve || null;
+    if (data.round) {
+      snapshot.round = data.round;
+      snapshot.round.curve = data.curve || snapshot.settings?.curve || null;
+    } else {
+      patchRound(data.roundId, {
+        phase: data.phase || "flying",
+        launchAt: data.launchAt,
+        currentMultiplier: data.currentMultiplier || 1,
+        curve: data.curve || snapshot.settings?.curve || null
+      });
+    }
   } else if (type === "bet_placed") {
     if (data.round) {
       snapshot.round = data.round;
@@ -868,12 +877,13 @@ function handleRealtimeEvent(type, data) {
       upsertBet(data.bet);
     }
   } else if (type === "cashout") {
+    let applied = true;
     if (data.round) {
       snapshot.round = data.round;
     } else {
-      upsertBet(data.bet);
+      applied = upsertBet(data.bet);
     }
-    spawnCashoutEffect(data.bet);
+    if (applied) spawnCashoutEffect(data.bet);
   } else if (type === "crash") {
     snapshot.round = data.round;
     if (data.history) snapshot.history = data.history;
@@ -888,8 +898,20 @@ function handleRealtimeEvent(type, data) {
   render();
 }
 
+function patchRound(roundId, changes) {
+  if (!snapshot?.round || !roundId || snapshot.round.id !== roundId) {
+    refreshState("round-delta-miss");
+    return false;
+  }
+  Object.assign(snapshot.round, changes);
+  return true;
+}
+
 function upsertBet(bet) {
-  if (!snapshot?.round || !bet || bet.roundId !== snapshot.round.id) return;
+  if (!snapshot?.round || !bet || bet.roundId !== snapshot.round.id) {
+    refreshState("bet-delta-miss");
+    return false;
+  }
   const bets = snapshot.round.bets || [];
   const index = bets.findIndex((item) => item.id === bet.id);
   if (index >= 0) {
@@ -898,6 +920,7 @@ function upsertBet(bet) {
     bets.push(bet);
   }
   snapshot.round.bets = bets;
+  return true;
 }
 
 function getMyBet() {

@@ -378,16 +378,16 @@ for each bot:
 
 事件驱动：
 
-- 连接后推 `snapshot`。
-- 新局推 `round_start`。
-- 每次下注推 `bet_placed`。
-- 起飞推 `flight_start`。
-- Cash Out 推 `cashout`。
-- 爆炸推 `crash`。
+- 连接后推完整 `snapshot`。
+- 新局推完整 `round_start`。
+- 每次下注推增量 `bet_placed`，只包含新增 `bet`。
+- 起飞推增量 `flight_start`，只包含 `roundId`、`launchAt` 和曲线参数。
+- Cash Out 推增量 `cashout`，只包含状态变化后的 `bet`。
+- 爆炸推完整 `crash`，作为本局最终结算同步点。
 - 后台参数变更推 `settings_updated`。
 - 当前玩家余额变更推 `player_update`。
 
-飞行中不持续推送倍率。前端收到 `flight_start.launchAt` 后本地计算倍率显示。
+飞行中不持续推送倍率。前端收到 `flight_start.launchAt` 后本地计算倍率显示。增量事件应用失败时，前端会拉取 `/api/state` 做一次完整校准。
 
 延迟显示使用 WebSocket ping/pong，不再依赖 HTTP `/api/ping` 定时请求。
 

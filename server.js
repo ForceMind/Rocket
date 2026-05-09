@@ -483,7 +483,7 @@ function placeDueBotBets(timestamp) {
   for (const bot of currentRound.botPlan) {
     if (bot.placed || timestamp < bot.placeAt) continue;
     bot.placed = true;
-    currentRound.bets.push({
+    const bet = {
       id: newId("bet"),
       roundId: currentRound.id,
       playerId: `bot_${bot.id}`,
@@ -497,11 +497,11 @@ function placeDueBotBets(timestamp) {
       payoutCents: 0,
       placedAt: nowIso(),
       settledAt: null
-    });
+    };
+    currentRound.bets.push(bet);
     broadcastEvent("bet_placed", {
       roundId: currentRound.id,
-      round: publicRound(),
-      bet: publicBet(currentRound.bets[currentRound.bets.length - 1])
+      bet: publicBet(bet)
     });
     changed = true;
   }
@@ -564,7 +564,10 @@ function startFlying() {
   currentRound.currentMultiplier = 1;
   currentRound.curve = curveConfig();
   broadcastEvent("flight_start", {
-    round: publicRound(),
+    roundId: currentRound.id,
+    phase: currentRound.phase,
+    launchAt: currentRound.launchAt,
+    currentMultiplier: currentRound.currentMultiplier,
     curve: currentRound.curve
   });
 }
@@ -680,7 +683,6 @@ function emitCashout(bet) {
   const player = db.players[bet.playerId];
   broadcastEvent("cashout", {
     roundId: bet.roundId,
-    round: publicRound(),
     bet: publicBet(bet)
   });
   if (player) {
@@ -1267,7 +1269,7 @@ async function handleApi(req, res, url) {
     applyPrizePoolCap("human-bet");
     audit("bet.placed", { playerId: player.id, roundId: currentRound.id, amountCents });
     saveDb();
-    broadcastEvent("bet_placed", { roundId: currentRound.id, round: publicRound(), bet: publicBet(bet) });
+    broadcastEvent("bet_placed", { roundId: currentRound.id, bet: publicBet(bet) });
     sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
     return sendJson(res, 200, { bet: publicBet(bet), player: publicPlayer(player), state: publicSnapshot(player.id) });
   }

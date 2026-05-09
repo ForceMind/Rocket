@@ -519,7 +519,6 @@ wss://localhost:3000/ws?playerId=player_...
   "type": "bet_placed",
   "data": {
     "roundId": "round_...",
-    "round": {},
     "bet": {}
   }
 }
@@ -527,7 +526,8 @@ wss://localhost:3000/ws?playerId=player_...
 
 说明：
 
-- 当前版本带上完整 `round`，前端收到后直接刷新列表。
+- 这是增量事件，只推新增的单条 `bet`，不再重复推完整 `round`。
+- 前端把 `bet` 合并进当前回合的 `bets` 列表；如果本地回合不匹配，会自动拉取一次完整状态兜底。
 - 机器人下注按后台间隔陆续触发。
 
 ### 5.5 flight_start
@@ -538,10 +538,10 @@ wss://localhost:3000/ws?playerId=player_...
 {
   "type": "flight_start",
   "data": {
-    "round": {
-      "phase": "flying",
-      "launchAt": 1778130000000
-    },
+    "roundId": "round_...",
+    "phase": "flying",
+    "launchAt": 1778130000000,
+    "currentMultiplier": 1,
     "curve": {
       "type": "piecewise-exp",
       "targetMultiplier": 20,
@@ -554,7 +554,7 @@ wss://localhost:3000/ws?playerId=player_...
 }
 ```
 
-前端收到后本地计算倍率，不需要服务端持续推倍率。
+前端收到后只更新当前回合的起飞状态和曲线参数，原有下注列表保留。飞行中前端本地计算倍率，不需要服务端持续推倍率。
 
 ### 5.6 cashout
 
@@ -565,7 +565,6 @@ wss://localhost:3000/ws?playerId=player_...
   "type": "cashout",
   "data": {
     "roundId": "round_...",
-    "round": {},
     "bet": {}
   }
 }
@@ -573,7 +572,8 @@ wss://localhost:3000/ws?playerId=player_...
 
 说明：
 
-- 带完整 `round`，保证列表状态实时更新。
+- 这是增量事件，只推状态变化后的单条 `bet`。
+- 前端用该 `bet` 替换本地列表中的同一条下注，列表状态实时更新。
 - 玩家端会在曲线上显示跳出效果。
 
 ### 5.7 crash
