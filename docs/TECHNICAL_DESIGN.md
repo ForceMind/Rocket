@@ -171,8 +171,8 @@ currentMultiplier = floor(currentMultiplier * 100) / 100
 解释：
 
 - `elapsedMs` 是火箭起飞后经过的毫秒数。
-- 20x 前使用“少量线性抬升 + 幂函数”的混合曲线，让前段慢下来，但不会长时间停在 `1.00x`。
-- `earlyLinearWeight = 0.02` 是固定保护项，表示前段进度里有 2% 按线性推进，用来保证起飞后倍率会尽快从 `1.00x` 变成 `1.01x`。
+- 20x 前使用慢启动幂函数。`progress ^ earlyPower` 会让起步更慢，越接近 20x 越追上目标。
+- `earlyLinearWeight = 0.02` 是固定保护项，表示前段进度里有 2% 按线性推进，用来保证起飞后倍率会逐步从 `1.00x` 变成 `1.01x`。
 - 20x 后使用指数函数，让高倍不要拖太久。
 - `floor(... * 100) / 100` 是向下保留两位小数。
 
@@ -191,8 +191,8 @@ curveLateSpeedMs = 12000
 | --- | --- |
 | 1.01x | 0.8 秒 |
 | 2x | 9.9 秒 |
-| 5x | 18 秒 |
-| 10x | 26 秒 |
+| 5x | 18.1 秒 |
+| 10x | 25.5 秒 |
 | 20x | 35 秒 |
 | 50x | 46 秒 |
 | 100x | 54 秒 |
@@ -216,9 +216,15 @@ currentMultiplier >= crashMultiplier
 玩家端显示会额外减去 1 秒缓冲：
 
 ```text
-displayElapsedMs = max(0, serverNow - launchAt - 1000)
-displayMultiplier = curveMultiplier(displayElapsedMs)
+if serverNow - launchAt < 1000:
+  show "Starting Soon!"
+else:
+  displayElapsedMs = serverNow - launchAt - 1000
+  displayMultiplier = curveMultiplier(displayElapsedMs)
+  readoutMultiplier = smoothToward(displayMultiplier)
 ```
+
+飞行中的大倍率文字使用 `requestAnimationFrame` 平滑刷新，低倍阶段每帧最多推进 `0.01x`，避免从 `1.13x` 直接跳到 `1.15x` 这类视觉跳变。
 
 这只影响画面和按钮文案，不影响服务端爆炸、手动提现或自动提现结算。目的在于让画面比服务端权威时间保守一些，降低网络延迟造成的“画面飞过爆点后才收到爆炸”的观感。
 

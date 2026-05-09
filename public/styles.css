@@ -280,6 +280,14 @@ body:not(.admin-body) .game-layout {
   color: var(--amber);
 }
 
+.multiplier-readout strong.starting {
+  color: var(--amber);
+  font-size: clamp(34px, 5.8vw, 76px);
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .multiplier-readout strong.urgent {
   color: var(--red);
   text-shadow: 0 0 26px rgba(255, 107, 95, 0.42), 0 18px 54px rgba(0, 0, 0, 0.62);
@@ -1449,6 +1457,10 @@ body:not(.admin-body) .multiplier-readout strong {
   font-size: clamp(46px, 8.4vw, 72px);
 }
 
+body:not(.admin-body) .multiplier-readout strong.starting {
+  font-size: clamp(28px, 5vw, 46px);
+}
+
 body:not(.admin-body) .multiplier-readout span {
   min-height: 24px;
   padding: 3px 8px;
@@ -1792,6 +1804,20 @@ body.tutorial-active::before {
   pointer-events: auto;
 }
 
+.tutorial-guide[data-position="top"] .tutorial-coach {
+  top: 74px;
+  bottom: auto;
+}
+
+.tutorial-guide[data-position="bottom"] .tutorial-coach {
+  top: auto;
+  bottom: 18px;
+}
+
+body.tutorial-active .cashout-effects {
+  display: none;
+}
+
 .tutorial-coach-head {
   display: flex;
   align-items: center;
@@ -1873,21 +1899,23 @@ body:not(.admin-body) .bet-panel {
 
 body:not(.admin-body) .bet-form {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) 122px 112px;
-  grid-template-rows: 62px 58px;
-  column-gap: 10px;
-  row-gap: 6px;
-  align-items: end;
+  grid-template-columns: minmax(236px, 1fr) 196px 104px;
+  grid-template-rows: 40px 44px;
+  column-gap: 8px;
+  row-gap: 4px;
+  align-items: center;
 }
 
 body:not(.admin-body) .bet-form > label:nth-of-type(1) {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto 52px;
   align-items: center;
-  column-gap: 8px;
+  justify-content: center;
+  column-gap: 10px;
   grid-column: 1;
   grid-row: 1;
-  align-self: end;
+  align-self: center;
+  justify-self: stretch;
 }
 
 body:not(.admin-body) .bet-form > label:nth-of-type(1) span {
@@ -1895,23 +1923,33 @@ body:not(.admin-body) .bet-form > label:nth-of-type(1) span {
 }
 
 body:not(.admin-body) .bet-form > .chip-row {
-  grid-column: 1 / span 2;
+  grid-column: 1;
   grid-row: 2;
   align-self: center;
 }
 
 body:not(.admin-body) .bet-form > .switch-line {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
+  justify-self: start;
 }
 
 body:not(.admin-body) .bet-form > label:nth-of-type(3) {
-  grid-column: 3;
+  display: grid;
+  grid-template-columns: auto 84px;
+  align-items: center;
+  column-gap: 8px;
+  grid-column: 2;
   grid-row: 2;
+  justify-self: start;
+}
+
+body:not(.admin-body) .bet-form > label:nth-of-type(3) span {
+  white-space: nowrap;
 }
 
 body:not(.admin-body) .bet-form > .primary-button {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1;
 }
 
@@ -1955,7 +1993,8 @@ body:not(.admin-body) .table-panel td {
   }
 
   body:not(.admin-body) .bet-form {
-    grid-template-columns: 108px minmax(0, 1fr) 112px 104px;
+    grid-template-columns: minmax(226px, 1fr) 188px 100px;
+    grid-template-rows: 40px 44px;
   }
 
   body:not(.admin-body) .chip-row button {
@@ -2089,7 +2128,7 @@ body:not(.admin-body) .bet-form > .switch-line {
   display: flex;
   flex-wrap: nowrap;
   align-self: center;
-  justify-self: stretch;
+  justify-self: start;
   white-space: nowrap;
 }
 
@@ -2098,7 +2137,7 @@ body:not(.admin-body) .bet-form > .switch-line input {
 }
 
 body:not(.admin-body) .bet-form > .primary-button.action-button {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1 / span 2;
   align-self: stretch;
 }

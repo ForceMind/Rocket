@@ -81,6 +81,8 @@ let tutorialState = null;
 let preferenceTimer = null;
 let stateRefreshInFlight = false;
 let lastStateRefreshAt = 0;
+let readoutRoundId = null;
+let readoutMultiplier = null;
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("zh-CN", {
@@ -226,8 +228,35 @@ function displayMultiplier(round = snapshot?.round) {
   return Math.floor(clamp(raw, 1, displayCap) * 100) / 100;
 }
 
+function isDisplayStartingSoon(round = snapshot?.round) {
+  if (!round || round.phase !== "flying" || !round.launchAt) return false;
+  const launchAt = Number(round.launchAt);
+  if (!Number.isFinite(launchAt)) return false;
+  return Math.max(0, serverNow() - launchAt) < DISPLAY_LAG_MS;
+}
+
+function smoothReadoutMultiplier(target, round = snapshot?.round) {
+  const value = safeRoundMultiplier(target, 1);
+  if (round?.phase !== "flying" || !round?.id) {
+    readoutRoundId = round?.id || null;
+    readoutMultiplier = value;
+    return value;
+  }
+  if (readoutRoundId !== round.id || readoutMultiplier === null || readoutMultiplier > value) {
+    readoutRoundId = round.id;
+    readoutMultiplier = value;
+    return value;
+  }
+  const maxStep = readoutMultiplier < 3 ? 0.01 : readoutMultiplier < 10 ? 0.03 : 0.08;
+  readoutMultiplier = Math.min(value, readoutMultiplier + maxStep);
+  return Math.floor(readoutMultiplier * 100) / 100;
+}
+
 function secondsUntil(timestamp) {
-  return Math.max(0, Math.ceil((Number(timestamp || 0) - serverNow()) / 1000));
+  const numeric = Number(timestamp || 0);
+  const target = Number.isFinite(numeric) && numeric > 0 ? numeric : Date.parse(timestamp || "");
+  if (!Number.isFinite(target)) return 0;
+  return Math.max(0, Math.ceil((target - serverNow()) / 1000));
 }
 
 function showMessage(text, isError = false) {
@@ -477,12 +506,6 @@ function cashoutTutorialManual() {
   tutorialState.cashedPayout = (tutorialState.amount || 10) * tutorialState.cashoutMultiplier;
   tutorialState.step = "crashing";
   render();
-  spawnCashoutEffect({
-    id: "tutorial_user_bet",
-    displayName: "Yo**",
-    cashoutMultiplier: tutorialState.cashoutMultiplier,
-    payout: tutorialState.cashedPayout
-  });
   scheduleTutorial(650, () => {
     if (!isTutorialActive()) return;
     const start = tutorialState.multiplier;
@@ -585,12 +608,15 @@ function tutorialRound() {
   return {
     id: "tutorial_round",
     phase: tutorialState.phase,
-    bettingEndsAt: new Date(Date.now() + 5000).toISOString(),
-    nextRoundAt: new Date(Date.now() + 5000).toISOString(),
+    bettingEndsAt: Date.now() + 5000,
+    nextRoundAt: Date.now() + 5000,
     currentMultiplier: tutorialState.multiplier,
     crashMultiplier: 2.84,
     bets: tutorialBets(),
-    curve: snapshot?.settings?.curve || null
+    curve: snapshot?.settings?.curve || null,
+    seedHash: "demo_9f2a7c84e1b05d3c8a4f",
+    serverSeedHash: "demo_9f2a7c84e1b05d3c8a4f",
+    hmac: "demo_hmac_preview"
   };
 }
 
@@ -618,6 +644,9 @@ function tutorialSnapshot() {
 function renderTutorialCoach() {
   if (!isTutorialActive()) return;
   ui.tutorialOverlay?.classList.remove("hidden");
+  ui.tutorialOverlay.dataset.position = ["chooseChip", "placeBet", "cashout", "autoCashout"].includes(tutorialState.step)
+    ? "top"
+    : "bottom";
   ui.tutorialDone.disabled = !tutorialState.complete;
   ui.tutorialDone.textContent = tutorialState.complete ? "Start Playing" : "Start Playing";
 
@@ -651,12 +680,16 @@ function renderTutorialView() {
   const round = snapshot.round;
   const currentMultiplier = tutorialState.multiplier;
   renderChips();
+  if (ui.cashoutEffects) ui.cashoutEffects.innerHTML = "";
   ui.playerName.textContent = snapshot.player?.username || "Guest";
   ui.balance.textContent = formatMoney(snapshot.player?.balance || 0);
   ui.phaseLabel.textContent = phaseText(round?.phase);
   ui.phaseLabel.className = `phase-label ${round?.phase || ""}`;
   ui.roundId.textContent = "tutorial";
-  renderMainReadout(round, currentMultiplier);
+  renderMainReadout(round, smoothReadoutMultiplier(currentMultiplier, round));
+  if (ui.seedHash) {
+    ui.seedHash.textContent = round.seedHash || "-";
+  }
   ui.resultLabel.textContent = tutorialState.phase === "crashed"
     ? `Crashed at ${formatMultiplier(round.crashMultiplier)}`
     : tutorialState.phase === "flying"
@@ -881,12 +914,15 @@ function renderClock(round) {
 }
 
 function renderMainReadout(round, currentMultiplier = displayMultiplier(round)) {
-  ui.multiplier.classList.remove("countdown", "urgent");
+  ui.multiplier.classList.remove("countdown", "urgent", "starting");
   if (round?.phase === "betting") {
     const seconds = secondsUntil(round.bettingEndsAt);
     ui.multiplier.textContent = `${seconds}s`;
     ui.multiplier.classList.add("countdown");
     ui.multiplier.classList.toggle("urgent", seconds <= 3);
+  } else if (isDisplayStartingSoon(round)) {
+    ui.multiplier.textContent = "Starting Soon!";
+    ui.multiplier.classList.add("starting");
   } else if (round?.phase === "flying") {
     ui.multiplier.textContent = formatMultiplier(currentMultiplier);
   } else if (round?.phase === "crashed") {
@@ -1003,9 +1039,16 @@ function renderActions() {
   let disabled = true;
 
   if (canCashout) {
-    mode = "cashout";
-    label = `Cash Out ${formatMultiplier(displayMultiplier(round))}`;
-    disabled = false;
+    if (isDisplayStartingSoon(round)) {
+      label = "Starting Soon!";
+    } else {
+      mode = "cashout";
+      const cashoutDisplay = readoutRoundId === round.id && readoutMultiplier !== null
+        ? readoutMultiplier
+        : displayMultiplier(round);
+      label = `Cash Out ${formatMultiplier(cashoutDisplay)}`;
+      disabled = false;
+    }
   } else if (canBet) {
     mode = "bet";
     label = "Place Bet";
@@ -1115,7 +1158,7 @@ function render() {
   ui.phaseLabel.textContent = phaseText(round?.phase);
   ui.phaseLabel.className = `phase-label ${round?.phase || ""}`;
   ui.roundId.textContent = round?.id ? round.id.slice(-10) : "-";
-  renderMainReadout(round, currentMultiplier);
+  renderMainReadout(round, smoothReadoutMultiplier(currentMultiplier, round));
   if (ui.seedHash) {
     ui.seedHash.textContent = round?.seedHash || "-";
   }
@@ -1126,7 +1169,7 @@ function render() {
   } else if (round?.phase === "betting") {
     ui.resultLabel.textContent = "Place your bet";
   } else if (round?.phase === "flying") {
-    ui.resultLabel.textContent = "Flying";
+    ui.resultLabel.textContent = isDisplayStartingSoon(round) ? "Starting Soon!" : "Flying";
   } else if (round?.phase === "crashed") {
     ui.resultLabel.textContent = `Crashed at ${formatMultiplier(round.crashMultiplier)}`;
   } else {
@@ -1177,6 +1220,9 @@ function setupCanvas() {
     const height = rect.height;
     const round = isTutorialActive() ? tutorialRound() : snapshot?.round;
     const multiplier = isTutorialActive() ? Number(tutorialState.multiplier || 1) : Number(displayMultiplier(round));
+    if (round?.phase === "flying") {
+      renderMainReadout(round, smoothReadoutMultiplier(multiplier, round));
+    }
 
     ctx.clearRect(0, 0, width, height);
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -1514,7 +1560,9 @@ setInterval(() => {
     renderTutorialView();
   } else if (snapshot) {
     renderClock(snapshot.round);
-    renderMainReadout(snapshot.round);
+    if (snapshot.round?.phase !== "flying") {
+      renderMainReadout(snapshot.round);
+    }
     renderActions();
   }
 }, 250);
