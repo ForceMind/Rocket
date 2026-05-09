@@ -1679,6 +1679,25 @@ body:not(.admin-body) .rules-content button {
   font-weight: 900;
 }
 
+body:not(.admin-body) .rules-popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+body:not(.admin-body) .rules-popover .rules-tutorial-button {
+  width: auto;
+  min-width: 104px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--green), var(--lime));
+  color: #08110c;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 body:not(.admin-body) .history-popover-head {
   display: flex;
   align-items: center;

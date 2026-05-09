@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rocket Crash</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260509-5" />
+    <link rel="stylesheet" href="/styles.css?v=20260509-7" />
   </head>
   <body>
     <div class="app-shell">
@@ -51,14 +51,16 @@
             <div id="rulesPopover" class="rules-popover hidden">
               <div class="history-popover-head">
                 <strong>Rules</strong>
-                <button id="rulesClose" type="button" aria-label="Close rules">x</button>
+                <div class="rules-popover-actions">
+                  <button id="rulesTutorialButton" class="rules-tutorial-button" type="button">Play Tutorial</button>
+                  <button id="rulesClose" type="button" aria-label="Close rules">x</button>
+                </div>
               </div>
               <div class="rules-content">
                 <p>Place one chip-tier bet before launch.</p>
                 <p>Cash out before the rocket crashes to lock your payout.</p>
                 <p>Auto Cashout jumps out automatically at your target multiplier.</p>
                 <p>Open bets lose when the rocket explodes.</p>
-                <button id="rulesTutorialButton" type="button">Play Tutorial</button>
               </div>
             </div>
             <div class="multiplier-readout">
