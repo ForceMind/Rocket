@@ -214,7 +214,9 @@ function publicPlayer(player) {
     id: player.id,
     username: player.username,
     balance: centsToAmount(player.balanceCents),
-    createdAt: player.createdAt
+    createdAt: player.createdAt,
+    tutorialCompleted: Boolean(player.tutorialCompletedAt),
+    tutorialCompletedAt: player.tutorialCompletedAt || null
   };
 }
 
@@ -259,6 +261,7 @@ function getOrCreatePlayer(username) {
     id: newId("player"),
     username: cleanUsername,
     balanceCents: db.settings.demoCreditCents,
+    tutorialCompletedAt: null,
     createdAt: nowIso(),
     updatedAt: nowIso(),
     lastSeenAt: nowIso()
@@ -995,6 +998,11 @@ function sendPlayerEvent(playerId, type, data = {}) {
 }
 
 function publicSettings() {
+  const maxDisplayMultiplier = Math.max(
+    db.settings.maxCrashMultiplier || DEFAULT_SETTINGS.maxCrashMultiplier,
+    db.settings.botOnlyHighFlightMin || DEFAULT_SETTINGS.botOnlyHighFlightMin,
+    db.settings.botOnlyHighFlightMax || DEFAULT_SETTINGS.botOnlyHighFlightMax
+  );
   return {
     minBet: centsToAmount(db.settings.minBetCents),
     maxBet: centsToAmount(db.settings.maxBetCents),
@@ -1003,6 +1011,7 @@ function publicSettings() {
     roundPauseMs: db.settings.roundPauseMs,
     paused: db.settings.paused,
     curveSpeedMs: CURVE_SPEED_MS,
+    maxDisplayMultiplier,
     publicWsUrl: ""
   };
 }
@@ -1123,6 +1132,22 @@ async function handleApi(req, res, url) {
   if (route === "POST /api/player/login") {
     const body = await readJson(req);
     const player = getOrCreatePlayer(body.username);
+    return sendJson(res, 200, { player: publicPlayer(player), state: publicSnapshot(player.id) });
+  }
+
+  if (route === "POST /api/player/tutorial") {
+    const body = await readJson(req);
+    const player = getPlayer(body.playerId);
+    if (body.completed !== true) {
+      throw httpError(400, "completed must be true");
+    }
+    if (!player.tutorialCompletedAt) {
+      player.tutorialCompletedAt = nowIso();
+      audit("player.tutorial.completed", { playerId: player.id });
+    }
+    player.updatedAt = nowIso();
+    saveDb();
+    sendPlayerEvent(player.id, "player_update", { player: publicPlayer(player) });
     return sendJson(res, 200, { player: publicPlayer(player), state: publicSnapshot(player.id) });
   }
 

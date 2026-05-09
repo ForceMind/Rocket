@@ -17,6 +17,10 @@ const ui = {
   historyButton: $("#historyButton"),
   historyPopover: $("#historyPopover"),
   historyClose: $("#historyClose"),
+  rulesButton: $("#rulesButton"),
+  rulesPopover: $("#rulesPopover"),
+  rulesClose: $("#rulesClose"),
+  rulesTutorialButton: $("#rulesTutorialButton"),
   seedHash: $("#seedHash"),
   crashHistory: $("#crashHistory"),
   myHistory: $("#myHistory"),
@@ -31,10 +35,34 @@ const ui = {
   message: $("#message"),
   betCount: $("#betCount"),
   betsBody: $("#betsBody"),
-  canvas: $("#rocketCanvas")
+  canvas: $("#rocketCanvas"),
+  tutorialOverlay: $("#tutorialOverlay"),
+  tutorialSkip: $("#tutorialSkip"),
+  tutorialReplay: $("#tutorialReplay"),
+  tutorialDone: $("#tutorialDone"),
+  tutorialProgress: $("#tutorialProgress"),
+  tutorialTitle: $("#tutorialTitle"),
+  tutorialText: $("#tutorialText"),
+  tutorialDemo: $("#tutorialDemo"),
+  tutorialTrail: $("#tutorialTrail"),
+  tutorialRocket: $("#tutorialRocket"),
+  tutorialBurst: $("#tutorialBurst"),
+  tutorialMultiplier: $("#tutorialMultiplier"),
+  tutorialPhase: $("#tutorialPhase"),
+  tutorialCashoutPop: $("#tutorialCashoutPop"),
+  tutorialPayout: $("#tutorialPayout"),
+  tutorialBetAmount: $("#tutorialBetAmount"),
+  tutorialAutoCashout: $("#tutorialAutoCashout"),
+  tutorialAction: $("#tutorialAction"),
+  tutorialRoundStatus: $("#tutorialRoundStatus"),
+  tutorialPlayers: $("#tutorialPlayers")
 };
 
 const runtimeConfig = window.ROCKET_CONFIG || {};
+const DEFAULT_CURVE_SPEED_MS = 6500;
+const DEFAULT_MAX_DISPLAY_MULTIPLIER = 1000;
+const STALE_FLIGHT_GRACE_MS = 10000;
+const STATE_REFRESH_INTERVAL_MS = 5000;
 
 let session = null;
 let snapshot = null;
@@ -52,6 +80,11 @@ let latencyTimer = null;
 let latencyInFlight = false;
 let latencyTimeout = null;
 let cashoutEffectIds = new Set();
+let tutorialTimers = [];
+let tutorialAnimationFrame = null;
+let tutorialCompleteInFlight = false;
+let stateRefreshInFlight = false;
+let lastStateRefreshAt = 0;
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("zh-CN", {
@@ -61,7 +94,9 @@ function formatMoney(value) {
 }
 
 function formatMultiplier(value) {
-  return `${Number(value || 1).toFixed(2)}x`;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  return `${Math.max(1, number).toFixed(2)}x`;
 }
 
 function formatChip(value) {
@@ -75,15 +110,69 @@ function serverNow() {
   return Date.now() + serverTimeOffset;
 }
 
+function maxDisplayMultiplier() {
+  const configured = Number(snapshot?.settings?.maxDisplayMultiplier || DEFAULT_MAX_DISPLAY_MULTIPLIER);
+  if (!Number.isFinite(configured) || configured < 2) return DEFAULT_MAX_DISPLAY_MULTIPLIER;
+  return clamp(configured, 2, 10000);
+}
+
+function safeRoundMultiplier(value, fallback = 1) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 1 ? number : fallback;
+}
+
+function refreshState(reason = "sync") {
+  if (!session?.playerId || stateRefreshInFlight) return;
+  const now = Date.now();
+  if (now - lastStateRefreshAt < STATE_REFRESH_INTERVAL_MS) return;
+  stateRefreshInFlight = true;
+  lastStateRefreshAt = now;
+  api(`/api/state?playerId=${encodeURIComponent(session.playerId)}`)
+    .then((data) => {
+      snapshot = data;
+      render();
+    })
+    .catch((error) => {
+      console.warn(`State refresh failed (${reason})`, error);
+    })
+    .finally(() => {
+      stateRefreshInFlight = false;
+    });
+}
+
 function displayMultiplier(round = snapshot?.round) {
   if (!round) return 1;
   if (round.phase !== "flying" || !round.launchAt) {
-    return Number(round.currentMultiplier || round.crashMultiplier || 1);
+    return safeRoundMultiplier(round.currentMultiplier || round.crashMultiplier || 1);
   }
-  const speedMs = round.curveSpeedMs || snapshot?.settings?.curveSpeedMs || 6500;
-  const elapsed = Math.max(0, serverNow() - round.launchAt);
-  const raw = Math.exp(elapsed / speedMs);
-  return Math.floor(raw * 100) / 100;
+  const speedMs = Number(round.curveSpeedMs || snapshot?.settings?.curveSpeedMs || DEFAULT_CURVE_SPEED_MS);
+  const launchAt = Number(round.launchAt);
+  const fallback = safeRoundMultiplier(round.currentMultiplier || 1);
+  if (!Number.isFinite(speedMs) || speedMs <= 0 || !Number.isFinite(launchAt)) {
+    refreshState("invalid-flight-time");
+    return fallback;
+  }
+
+  const elapsed = Math.max(0, serverNow() - launchAt);
+  if (!Number.isFinite(elapsed)) {
+    refreshState("invalid-elapsed");
+    return fallback;
+  }
+
+  const displayCap = maxDisplayMultiplier();
+  const maxExponent = Math.log(displayCap);
+  const staleAtMs = maxExponent * speedMs + STALE_FLIGHT_GRACE_MS;
+  if (elapsed > staleAtMs) {
+    refreshState("stale-flight");
+  }
+
+  const exponent = Math.min(elapsed / speedMs, maxExponent);
+  const raw = Math.exp(exponent);
+  if (!Number.isFinite(raw)) {
+    refreshState("overflow");
+    return displayCap;
+  }
+  return Math.floor(clamp(raw, 1, displayCap) * 100) / 100;
 }
 
 function secondsUntil(timestamp) {
@@ -108,6 +197,7 @@ async function api(path, options = {}) {
       "Content-Type": "application/json",
       ...(options.headers || {})
     },
+    keepalive: Boolean(options.keepalive),
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
@@ -172,6 +262,268 @@ function loadSession() {
   return null;
 }
 
+function hasCompletedTutorial() {
+  return Boolean(snapshot?.player?.tutorialCompleted);
+}
+
+async function markTutorialComplete() {
+  if (!session?.playerId || hasCompletedTutorial() || tutorialCompleteInFlight) return;
+  tutorialCompleteInFlight = true;
+  try {
+    const data = await api("/api/player/tutorial", {
+      method: "POST",
+      keepalive: true,
+      body: { playerId: session.playerId, completed: true }
+    });
+    snapshot = data.state || snapshot;
+    if (data.player && snapshot) {
+      snapshot.player = data.player;
+    }
+    render();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    tutorialCompleteInFlight = false;
+  }
+}
+
+function clearTutorialTimers() {
+  for (const timer of tutorialTimers) clearTimeout(timer);
+  tutorialTimers = [];
+  if (tutorialAnimationFrame) {
+    cancelAnimationFrame(tutorialAnimationFrame);
+    tutorialAnimationFrame = null;
+  }
+}
+
+function scheduleTutorial(delayMs, fn) {
+  const timer = setTimeout(fn, delayMs);
+  tutorialTimers.push(timer);
+}
+
+function setTutorialRocket(progress) {
+  if (!ui.tutorialRocket) return;
+  const value = clamp(progress, 0, 1);
+  ui.tutorialRocket.style.left = `${12 + value * 66}%`;
+  ui.tutorialRocket.style.bottom = `${14 + value * 50}%`;
+  if (ui.tutorialTrail) {
+    ui.tutorialTrail.style.transform = `rotate(-34deg) scaleX(${0.14 + value * 0.86})`;
+  }
+}
+
+function setTutorialCopy(step, title, text) {
+  if (!ui.tutorialTitle) return;
+  ui.tutorialProgress.textContent = `Step ${step} / 5`;
+  ui.tutorialTitle.textContent = title;
+  ui.tutorialText.textContent = text;
+}
+
+function setTutorialStatus({
+  phase = "Waiting",
+  multiplier = 1,
+  action = "Place Bet",
+  amount = 10,
+  auto = "Off",
+  status = "No Bet",
+  players = "0 bets",
+  payout = "+17.20",
+  cashout = false,
+  crashed = false,
+  complete = false
+} = {}) {
+  if (!ui.tutorialDemo) return;
+  ui.tutorialPhase.textContent = phase;
+  ui.tutorialMultiplier.textContent = formatMultiplier(multiplier);
+  ui.tutorialAction.textContent = action;
+  ui.tutorialBetAmount.textContent = formatChip(amount);
+  ui.tutorialAutoCashout.textContent = auto;
+  ui.tutorialRoundStatus.textContent = status;
+  ui.tutorialPlayers.textContent = players;
+  ui.tutorialPayout.textContent = payout;
+  ui.tutorialCashoutPop.classList.toggle("hidden", !cashout);
+  ui.tutorialBurst.classList.toggle("show", crashed);
+  ui.tutorialDemo.classList.toggle("complete", complete);
+  ui.tutorialAction.classList.toggle("cashout-mode", action.includes("Cash Out"));
+}
+
+function animateTutorialFlight({ from = 1, to = 2, duration = 1600, startProgress = 0, endProgress = 0.75, onDone }) {
+  const startedAt = performance.now();
+
+  function drawFrame(now) {
+    const progress = clamp((now - startedAt) / duration, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const multiplier = from + (to - from) * eased;
+    const rocketProgress = startProgress + (endProgress - startProgress) * eased;
+
+    setTutorialRocket(rocketProgress);
+    setTutorialStatus({
+      phase: "Flying",
+      multiplier,
+      action: `Cash Out ${formatMultiplier(multiplier)}`,
+      amount: 10,
+      auto: ui.tutorialAutoCashout?.textContent || "Off",
+      status: "Open",
+      players: "3 bets"
+    });
+
+    if (progress < 1) {
+      tutorialAnimationFrame = requestAnimationFrame(drawFrame);
+    } else {
+      tutorialAnimationFrame = null;
+      onDone?.();
+    }
+  }
+
+  tutorialAnimationFrame = requestAnimationFrame(drawFrame);
+}
+
+function resetTutorialDemo() {
+  clearTutorialTimers();
+  setTutorialRocket(0);
+  ui.tutorialDemo?.classList.remove("complete");
+  ui.tutorialBurst?.classList.remove("show");
+  ui.tutorialCashoutPop?.classList.add("hidden");
+  setTutorialStatus();
+}
+
+function runTutorialDemo() {
+  resetTutorialDemo();
+  setTutorialCopy(1, "Place a Bet", "Choose a chip and place your bet before launch.");
+  setTutorialStatus({
+    phase: "Betting",
+    multiplier: 1,
+    action: "Place Bet",
+    amount: 10,
+    auto: "Off",
+    status: "No Bet",
+    players: "0 bets"
+  });
+
+  scheduleTutorial(900, () => {
+    setTutorialStatus({
+      phase: "Betting",
+      multiplier: 1,
+      action: "Bet Placed",
+      amount: 10,
+      auto: "Off",
+      status: "Waiting for Launch",
+      players: "1 bet"
+    });
+  });
+
+  scheduleTutorial(1800, () => {
+    setTutorialCopy(2, "Rocket Launches", "The multiplier grows while the rocket is flying.");
+    animateTutorialFlight({ from: 1, to: 1.72, duration: 1700, startProgress: 0.02, endProgress: 0.46 });
+  });
+
+  scheduleTutorial(3700, () => {
+    setTutorialCopy(3, "Cash Out", "Jump out before the crash to lock the payout.");
+    setTutorialRocket(0.48);
+    setTutorialStatus({
+      phase: "Flying",
+      multiplier: 1.72,
+      action: "Cashed Out",
+      amount: 10,
+      auto: "Off",
+      status: "Cashed 1.72x",
+      players: "3 bets",
+      payout: "+17.20",
+      cashout: true
+    });
+  });
+
+  scheduleTutorial(5400, () => {
+    setTutorialCopy(4, "Crash Ends the Round", "Open bets lose when the rocket explodes.");
+    setTutorialRocket(0.76);
+    setTutorialStatus({
+      phase: "Crashed",
+      multiplier: 2.84,
+      action: "Round Ended",
+      amount: 10,
+      auto: "Off",
+      status: "Cashed 1.72x",
+      players: "3 bets",
+      payout: "+17.20",
+      cashout: false,
+      crashed: true
+    });
+  });
+
+  scheduleTutorial(7000, () => {
+    setTutorialCopy(5, "Auto Cashout", "Set a target and the game jumps out automatically.");
+    ui.tutorialBurst?.classList.remove("show");
+    ui.tutorialCashoutPop?.classList.add("hidden");
+    setTutorialRocket(0.02);
+    setTutorialStatus({
+      phase: "Betting",
+      multiplier: 1,
+      action: "Bet Placed",
+      amount: 10,
+      auto: "2.00x",
+      status: "Auto at 2.00x",
+      players: "1 bet"
+    });
+  });
+
+  scheduleTutorial(7900, () => {
+    animateTutorialFlight({
+      from: 1,
+      to: 2,
+      duration: 1600,
+      startProgress: 0.02,
+      endProgress: 0.58,
+      onDone: () => {
+        setTutorialStatus({
+          phase: "Flying",
+          multiplier: 2,
+          action: "Auto Cashed",
+          amount: 10,
+          auto: "2.00x",
+          status: "Cashed 2.00x",
+          players: "3 bets",
+          payout: "+20.00",
+          cashout: true
+        });
+      }
+    });
+  });
+
+  scheduleTutorial(10300, () => {
+    setTutorialRocket(0.86);
+    setTutorialStatus({
+      phase: "Crashed",
+      multiplier: 3.18,
+      action: "Start Playing",
+      amount: 10,
+      auto: "2.00x",
+      status: "Cashed 2.00x",
+      players: "3 bets",
+      payout: "+20.00",
+      cashout: false,
+      crashed: true,
+      complete: true
+    });
+    markTutorialComplete();
+  });
+}
+
+function openTutorial(force = false) {
+  if (!ui.tutorialOverlay || !session?.playerId) return;
+  if (!force && hasCompletedTutorial()) return;
+  ui.tutorialOverlay.classList.remove("hidden");
+  runTutorialDemo();
+}
+
+function openTutorialIfNeeded() {
+  openTutorial(false);
+}
+
+function closeTutorial(markComplete = true) {
+  clearTutorialTimers();
+  if (markComplete) markTutorialComplete();
+  ui.tutorialOverlay?.classList.add("hidden");
+}
+
 async function login(username) {
   const data = await api("/api/player/login", {
     method: "POST",
@@ -182,6 +534,7 @@ async function login(username) {
   ui.overlay.classList.add("hidden");
   connectEvents();
   render();
+  setTimeout(openTutorialIfNeeded, 350);
 }
 
 function connectEvents() {
@@ -883,6 +1236,31 @@ ui.historyButton.addEventListener("click", () => {
 
 ui.historyClose.addEventListener("click", () => {
   ui.historyPopover.classList.add("hidden");
+});
+
+ui.rulesButton?.addEventListener("click", () => {
+  ui.rulesPopover?.classList.toggle("hidden");
+});
+
+ui.rulesClose?.addEventListener("click", () => {
+  ui.rulesPopover?.classList.add("hidden");
+});
+
+ui.rulesTutorialButton?.addEventListener("click", () => {
+  ui.rulesPopover?.classList.add("hidden");
+  openTutorial(true);
+});
+
+ui.tutorialSkip?.addEventListener("click", () => {
+  closeTutorial(true);
+});
+
+ui.tutorialDone?.addEventListener("click", () => {
+  closeTutorial(true);
+});
+
+ui.tutorialReplay?.addEventListener("click", () => {
+  runTutorialDemo();
 });
 
 setInterval(() => {

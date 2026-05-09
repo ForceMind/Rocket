@@ -50,7 +50,10 @@ GET /api/state?playerId=...
 ```json
 {
   "now": 1778130000000,
-  "settings": {},
+  "settings": {
+    "curveSpeedMs": 6500,
+    "maxDisplayMultiplier": 300
+  },
   "player": {},
   "round": {},
   "history": [],
@@ -62,6 +65,8 @@ GET /api/state?playerId=...
 
 - `playerId` 可选。
 - 有 `playerId` 时返回当前玩家信息和本人历史。
+- `settings.curveSpeedMs` 用于前端本地计算飞行倍率。
+- `settings.maxDisplayMultiplier` 用于前端显示保护，避免异常时间差导致 `Infinityx`。
 - 玩家端 WebSocket 公网地址优先来自 `public/runtime-config.js` 中的 `window.ROCKET_CONFIG.publicWsUrl`。该值为空时，玩家端按当前页面地址自动生成 WebSocket 地址。
 
 ### 3.2 Ping
@@ -105,7 +110,9 @@ POST /api/player/login
     "id": "player_...",
     "username": "Tester01",
     "balance": 1000,
-    "createdAt": "2026-05-07T00:00:00.000Z"
+    "createdAt": "2026-05-07T00:00:00.000Z",
+    "tutorialCompleted": false,
+    "tutorialCompletedAt": null
   },
   "state": {}
 }
@@ -116,8 +123,40 @@ POST /api/player/login
 - 昵称至少 2 个字符。
 - 同名玩家会复用已有玩家记录。
 - 新玩家获得后台配置的初始积分。
+- `tutorialCompleted` 表示该玩家是否已经完成或跳过新手引导，状态保存在服务器端。
 
-### 3.4 下注
+### 3.4 新手引导完成记录
+
+```text
+POST /api/player/tutorial
+```
+
+请求：
+
+```json
+{
+  "playerId": "player_...",
+  "completed": true
+}
+```
+
+规则：
+
+- 只接受 `completed: true`，用于记录玩家已经完成或跳过新手引导。
+- 完成时间写入玩家记录的 `tutorialCompletedAt`。
+- 前端首次登录时根据服务器返回的 `tutorialCompleted` 决定是否自动显示引导。
+- 玩家仍可在规则弹窗中手动重播引导，手动重播不会清空完成状态。
+
+返回：
+
+```json
+{
+  "player": {},
+  "state": {}
+}
+```
+
+### 3.5 下注
 
 ```text
 POST /api/bet
@@ -152,7 +191,7 @@ POST /api/bet
 }
 ```
 
-### 3.5 Cash Out
+### 3.6 Cash Out
 
 ```text
 POST /api/cashout

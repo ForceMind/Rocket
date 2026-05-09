@@ -55,7 +55,21 @@ data/db.json
 | `botOnlyHighFlightMin` / `botOnlyHighFlightMax` | 纯机器人高飞倍率范围 |
 | `paused` | 是否暂停开新局 |
 
-### 3.2 Round
+### 3.2 Player
+
+核心字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | 玩家 ID |
+| `username` | 后台可见的真实昵称 |
+| `balanceCents` | 玩家积分余额 |
+| `tutorialCompletedAt` | 新手引导完成或跳过时间，`null` 表示首次进入仍需自动展示 |
+| `createdAt` / `updatedAt` / `lastSeenAt` | 创建、更新和最近登录时间 |
+
+玩家端登录后使用服务器返回的 `tutorialCompleted` 判断是否自动展示新手引导。规则弹窗中的手动重播只播放前端演示，不会清空 `tutorialCompletedAt`。
+
+### 3.3 Round
 
 核心字段：
 
@@ -78,7 +92,7 @@ data/db.json
 | `forced` | 是否后台强制爆炸 |
 | `poolCapped` | 是否被奖池上限压低爆点 |
 
-### 3.3 Bet
+### 3.4 Bet
 
 | 字段 | 说明 |
 | --- | --- |
@@ -151,6 +165,16 @@ currentMultiplier >= crashMultiplier
 ```
 
 服务端判断爆炸和提现，前端计算只用于显示。
+
+前端显示保护：
+
+```text
+displayMultiplier = clamp(currentMultiplier, 1, maxDisplayMultiplier)
+```
+
+- `maxDisplayMultiplier` 由服务端公开，取后台最大倍率和纯机器人高飞倍率范围的最大值。
+- 如果浏览器错过爆炸事件、系统休眠后恢复，或本地时间差导致 `elapsedMs` 异常变大，前端不会显示 `Infinityx`。
+- 当飞行时间超过理论显示上限后，前端会主动请求 `/api/state`，用服务端权威状态校准当前回合。
 
 ## 6. 视觉轨迹公式
 
