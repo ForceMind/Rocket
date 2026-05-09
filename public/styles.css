@@ -724,6 +724,7 @@ td small {
   padding: 16px;
   background: rgba(17, 17, 15, 0.84);
   backdrop-filter: blur(10px);
+  overflow: auto;
 }
 
 .tutorial-overlay.hidden {
@@ -732,15 +733,16 @@ td small {
 
 .tutorial-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto;
   gap: 12px;
-  width: min(620px, calc(100vw - 24px));
-  max-height: min(710px, calc(100vh - 24px));
+  width: min(760px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
   border: 1px solid rgba(244, 240, 231, 0.16);
   border-radius: 8px;
   padding: 14px;
   background: #171713;
   box-shadow: var(--shadow);
+  overflow: auto;
 }
 
 .tutorial-head,
@@ -782,6 +784,11 @@ td small {
   color: #11110f;
 }
 
+.tutorial-foot button:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
 .tutorial-copy {
   display: grid;
   gap: 4px;
@@ -797,15 +804,16 @@ td small {
 
 .tutorial-demo {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
-  grid-template-rows: minmax(240px, 1fr) auto;
+  grid-template-columns: minmax(320px, 1fr) 220px;
+  grid-template-rows: auto auto;
   gap: 10px;
   min-height: 0;
 }
 
 .tutorial-screen {
   position: relative;
-  min-height: 260px;
+  min-height: 320px;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -934,7 +942,7 @@ td small {
 
 .tutorial-controls {
   display: grid;
-  grid-template-rows: auto auto auto minmax(52px, 1fr);
+  grid-template-rows: auto auto auto auto auto;
   gap: 9px;
   min-height: 0;
   border: 1px solid var(--line);
@@ -962,30 +970,79 @@ td small {
   gap: 6px;
 }
 
-.tutorial-chip-row span {
+.tutorial-chip-row button {
   display: grid;
-  min-height: 34px;
+  min-height: 42px;
   place-items: center;
   border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.14);
   background: linear-gradient(135deg, #f4b84a, #ff6b5f);
   color: #11110f;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
-.tutorial-chip-row span:nth-child(2) {
+.tutorial-chip-row button:nth-child(2) {
   background: linear-gradient(135deg, #67d9e8, #4ed49b);
 }
 
-.tutorial-chip-row span:nth-child(3) {
+.tutorial-chip-row button:nth-child(3) {
   background: linear-gradient(135deg, #ff6b5f, #f4b84a);
 }
 
-.tutorial-chip-row span:nth-child(4) {
+.tutorial-chip-row button:nth-child(4) {
   background: linear-gradient(135deg, #4ed49b, #b8f45b);
 }
 
-.tutorial-controls button {
+.tutorial-chip-row button.selected {
+  box-shadow: 0 0 0 3px rgba(244, 240, 231, 0.26), 0 10px 26px rgba(0, 0, 0, 0.32);
+  transform: translateY(-1px);
+}
+
+.tutorial-chip-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.tutorial-auto-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  text-align: left;
+}
+
+.tutorial-auto-toggle span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tutorial-auto-toggle strong {
+  color: var(--amber);
+}
+
+.tutorial-auto-toggle.on {
+  border-color: rgba(78, 212, 155, 0.55);
+  background: rgba(78, 212, 155, 0.12);
+}
+
+.tutorial-auto-toggle.on strong {
+  color: var(--green);
+}
+
+.tutorial-auto-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.tutorial-primary-action {
   min-height: 54px;
   border-radius: 8px;
   background: linear-gradient(135deg, var(--green), #b8f45b);
@@ -993,8 +1050,26 @@ td small {
   font-weight: 900;
 }
 
-.tutorial-controls button.cashout-mode {
+.tutorial-primary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.tutorial-primary-action.cashout-mode {
   background: linear-gradient(135deg, var(--amber), #ffd37c);
+}
+
+.tutorial-instruction {
+  min-height: 34px;
+  margin: 0;
+  border: 1px solid rgba(103, 217, 232, 0.22);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: rgba(103, 217, 232, 0.08);
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.3;
 }
 
 .tutorial-round {
@@ -1029,7 +1104,7 @@ td small {
   }
 }
 
-@media (max-width: 640px), (max-height: 720px) {
+@media (max-width: 760px), (max-height: 680px) {
   .tutorial-panel {
     gap: 9px;
     padding: 10px;
@@ -1037,12 +1112,17 @@ td small {
 
   .tutorial-demo {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(220px, 1fr) auto auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  .tutorial-screen {
+    min-height: 260px;
   }
 
   .tutorial-controls {
-    grid-template-columns: 100px 1fr 108px;
-    grid-template-rows: auto auto;
+    grid-template-columns: minmax(92px, 0.7fr) minmax(0, 1fr) minmax(120px, 0.9fr);
+    grid-template-rows: auto auto auto;
+    align-items: stretch;
   }
 
   .tutorial-controls label:first-child {
@@ -1054,14 +1134,19 @@ td small {
     grid-row: 1;
   }
 
-  .tutorial-controls label:nth-of-type(2) {
+  .tutorial-auto-toggle {
     grid-column: 1 / span 2;
     grid-row: 2;
   }
 
-  .tutorial-controls button {
+  .tutorial-primary-action {
     grid-column: 3;
     grid-row: 1 / span 2;
+  }
+
+  .tutorial-instruction {
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
 
   .tutorial-multiplier {
