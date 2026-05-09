@@ -1217,6 +1217,7 @@ function escapeHtml(value) {
 
 function setupCanvas() {
   const ctx = ui.canvas.getContext("2d");
+  let canvasDpr = 1;
   const stars = Array.from({ length: 80 }, () => ({
     x: Math.random(),
     y: Math.random(),
@@ -1226,10 +1227,10 @@ function setupCanvas() {
 
   function resize() {
     const rect = ui.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    ui.canvas.width = Math.floor(rect.width * dpr);
-    ui.canvas.height = Math.floor(rect.height * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    canvasDpr = window.devicePixelRatio || 1;
+    ui.canvas.width = Math.max(1, Math.ceil(rect.width * canvasDpr));
+    ui.canvas.height = Math.max(1, Math.ceil(rect.height * canvasDpr));
+    ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
   }
 
   function draw(timestamp) {
@@ -1247,7 +1248,10 @@ function setupCanvas() {
       renderMainReadout(round, smoothReadoutMultiplier(multiplier, round));
     }
 
-    ctx.clearRect(0, 0, width, height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+    ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, "#141713");
     gradient.addColorStop(1, "#0d0d0b");
@@ -1278,6 +1282,11 @@ function setupCanvas() {
       explosionRoundId = null;
       drawRocket(ctx, x, y, round?.phase === "flying" ? timestamp : 0);
     }
+
+    ctx.save();
+    ctx.fillStyle = "#0d0d0b";
+    ctx.fillRect(0, height - 2, width, 2);
+    ctx.restore();
     requestAnimationFrame(draw);
   }
 
