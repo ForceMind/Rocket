@@ -63,6 +63,7 @@ const ui = {
 
 const runtimeConfig = window.ROCKET_CONFIG || {};
 const CURVE_TARGET_MULTIPLIER = 20;
+const CURVE_EARLY_LINEAR_WEIGHT = 0.02;
 const DEFAULT_CURVE_EARLY_TARGET_MS = 35000;
 const DEFAULT_CURVE_EARLY_POWER = 2.4;
 const DEFAULT_CURVE_LATE_SPEED_MS = 12000;
@@ -137,11 +138,15 @@ function curveConfig(round = snapshot?.round) {
   const earlyPower = Number(source.earlyPower || snapshot?.settings?.curveEarlyPower || DEFAULT_CURVE_EARLY_POWER);
   const lateSpeedMs = Number(source.lateSpeedMs || snapshot?.settings?.curveLateSpeedMs || DEFAULT_CURVE_LATE_SPEED_MS);
   const targetMultiplier = Number(source.targetMultiplier || CURVE_TARGET_MULTIPLIER);
+  const earlyLinearWeight = Number(source.earlyLinearWeight || CURVE_EARLY_LINEAR_WEIGHT);
   return {
     earlyTargetMs: Number.isFinite(earlyTargetMs) && earlyTargetMs > 0 ? earlyTargetMs : DEFAULT_CURVE_EARLY_TARGET_MS,
     earlyPower: Number.isFinite(earlyPower) && earlyPower > 0 ? earlyPower : DEFAULT_CURVE_EARLY_POWER,
     lateSpeedMs: Number.isFinite(lateSpeedMs) && lateSpeedMs > 0 ? lateSpeedMs : DEFAULT_CURVE_LATE_SPEED_MS,
-    targetMultiplier: Number.isFinite(targetMultiplier) && targetMultiplier > 1 ? targetMultiplier : CURVE_TARGET_MULTIPLIER
+    targetMultiplier: Number.isFinite(targetMultiplier) && targetMultiplier > 1 ? targetMultiplier : CURVE_TARGET_MULTIPLIER,
+    earlyLinearWeight: Number.isFinite(earlyLinearWeight) && earlyLinearWeight >= 0 && earlyLinearWeight <= 1
+      ? earlyLinearWeight
+      : CURVE_EARLY_LINEAR_WEIGHT
   };
 }
 
@@ -150,7 +155,10 @@ function multiplierFromElapsed(elapsedMs, round = snapshot?.round) {
   const config = curveConfig(round);
   let raw;
   if (elapsed <= config.earlyTargetMs) {
-    raw = 1 + (config.targetMultiplier - 1) * Math.pow(elapsed / config.earlyTargetMs, config.earlyPower);
+    const progress = elapsed / config.earlyTargetMs;
+    const easedProgress = (config.earlyLinearWeight * progress)
+      + ((1 - config.earlyLinearWeight) * Math.pow(progress, config.earlyPower));
+    raw = 1 + (config.targetMultiplier - 1) * easedProgress;
   } else {
     raw = config.targetMultiplier * Math.exp((elapsed - config.earlyTargetMs) / config.lateSpeedMs);
   }
@@ -161,7 +169,17 @@ function elapsedForMultiplier(multiplier, round = snapshot?.round) {
   const value = Math.max(1, Number(multiplier || 1));
   const config = curveConfig(round);
   if (value <= config.targetMultiplier) {
-    return config.earlyTargetMs * Math.pow((value - 1) / (config.targetMultiplier - 1), 1 / config.earlyPower);
+    let low = 0;
+    let high = config.earlyTargetMs;
+    for (let i = 0; i < 48; i += 1) {
+      const mid = (low + high) / 2;
+      if (multiplierFromElapsed(mid, round) < value) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    return high;
   }
   return config.earlyTargetMs + config.lateSpeedMs * Math.log(value / config.targetMultiplier);
 }

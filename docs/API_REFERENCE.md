@@ -56,6 +56,7 @@ GET /api/state?playerId=...
       "targetMultiplier": 20,
       "earlyTargetMs": 35000,
       "earlyPower": 2.4,
+      "earlyLinearWeight": 0.02,
       "lateSpeedMs": 12000
     },
     "curveEarlyTargetMs": 35000,
@@ -75,6 +76,7 @@ GET /api/state?playerId=...
 - `playerId` 可选。
 - 有 `playerId` 时返回当前玩家信息和本人历史。
 - `settings.curve` 用于前端本地计算飞行倍率；默认 35 秒到 20x，20x 后加速。
+- `settings.curve.earlyLinearWeight` 是固定保护项，避免起飞后长时间显示 `1.00x`。
 - `settings.curveEarlyTargetMs` 越大，20x 以前越慢。
 - `settings.curveEarlyPower` 越大，起步越慢，建议 2.0 到 3.2。
 - `settings.curveLateSpeedMs` 越小，20x 后高倍越快。

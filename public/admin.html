@@ -118,7 +118,7 @@
             <label><span>1.00 爆炸 bps</span><input name="instantCrashBps" type="number" /><small>火箭刚起飞就 1.00x 爆炸的概率，100 bps 等于 1%。</small></label>
             <label><span>最大倍率</span><input name="maxCrashMultiplier" type="number" /><small>随机爆点不会超过这个上限。</small></label>
             <label><span>20x 到达时间 ms</span><input name="curveEarlyTargetMs" type="number" /><small>飞行曲线前半段速度。默认 35000，表示约 35 秒到 20x；越大，20x 以前越慢。</small></label>
-            <label><span>20x 前慢启动</span><input name="curveEarlyPower" type="number" step="0.01" /><small>默认 2.4。越大，1x 到 5x 越慢，越有慢慢起飞的感觉；建议 2.0 到 3.2。</small></label>
+            <label><span>20x 前慢启动</span><input name="curveEarlyPower" type="number" step="0.01" /><small>默认 2.4。越大，1x 到 5x 越慢；公式内置保护，避免长时间卡在 1.00x。</small></label>
             <label><span>20x 后加速 ms</span><input name="curveLateSpeedMs" type="number" /><small>默认 12000。20x 后每经过这个时间约乘 e；越小，高倍飞得越快。</small></label>
             <label><span>机器人最少</span><input name="botMinCount" type="number" /><small>每局至少生成多少个机器人。</small></label>
             <label><span>机器人最多</span><input name="botMaxCount" type="number" /><small>每局最多生成多少个机器人。</small></label>

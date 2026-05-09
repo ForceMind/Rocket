@@ -155,10 +155,13 @@ crashed
 targetMultiplier = 20
 earlyTargetMs = curveEarlyTargetMs
 earlyPower = curveEarlyPower
+earlyLinearWeight = 0.02
 lateSpeedMs = curveLateSpeedMs
 
 if elapsedMs <= earlyTargetMs:
-  currentMultiplier = 1 + (targetMultiplier - 1) * (elapsedMs / earlyTargetMs) ^ earlyPower
+  progress = elapsedMs / earlyTargetMs
+  easedProgress = earlyLinearWeight * progress + (1 - earlyLinearWeight) * progress ^ earlyPower
+  currentMultiplier = 1 + (targetMultiplier - 1) * easedProgress
 else:
   currentMultiplier = targetMultiplier * exp((elapsedMs - earlyTargetMs) / lateSpeedMs)
 
@@ -168,7 +171,8 @@ currentMultiplier = floor(currentMultiplier * 100) / 100
 解释：
 
 - `elapsedMs` 是火箭起飞后经过的毫秒数。
-- 20x 前使用幂函数，让前段明显慢下来。
+- 20x 前使用“少量线性抬升 + 幂函数”的混合曲线，让前段慢下来，但不会长时间停在 `1.00x`。
+- `earlyLinearWeight = 0.02` 是固定保护项，表示前段进度里有 2% 按线性推进，用来保证起飞后倍率会尽快从 `1.00x` 变成 `1.01x`。
 - 20x 后使用指数函数，让高倍不要拖太久。
 - `floor(... * 100) / 100` 是向下保留两位小数。
 
@@ -177,6 +181,7 @@ currentMultiplier = floor(currentMultiplier * 100) / 100
 ```text
 curveEarlyTargetMs = 35000
 curveEarlyPower = 2.4
+earlyLinearWeight = 0.02
 curveLateSpeedMs = 12000
 ```
 
@@ -184,7 +189,8 @@ curveLateSpeedMs = 12000
 
 | 倍率 | 时间 |
 | --- | --- |
-| 2x | 10 秒 |
+| 1.01x | 0.8 秒 |
+| 2x | 9.9 秒 |
 | 5x | 18 秒 |
 | 10x | 26 秒 |
 | 20x | 35 秒 |

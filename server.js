@@ -15,6 +15,7 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const CURVE_TARGET_MULTIPLIER = 20;
+const CURVE_EARLY_LINEAR_WEIGHT = 0.02;
 
 function normalizeAdminPath(value) {
   const raw = String(value || "/manage").trim();
@@ -414,6 +415,7 @@ function curveConfig(settings = db.settings) {
     targetMultiplier: CURVE_TARGET_MULTIPLIER,
     earlyTargetMs,
     earlyPower,
+    earlyLinearWeight: CURVE_EARLY_LINEAR_WEIGHT,
     lateSpeedMs
   };
 }
@@ -424,7 +426,9 @@ function multiplierFromElapsed(elapsedMs, settings = db.settings) {
   let raw;
   if (elapsed <= config.earlyTargetMs) {
     const progress = elapsed / config.earlyTargetMs;
-    raw = 1 + (config.targetMultiplier - 1) * Math.pow(progress, config.earlyPower);
+    const easedProgress = (config.earlyLinearWeight * progress)
+      + ((1 - config.earlyLinearWeight) * Math.pow(progress, config.earlyPower));
+    raw = 1 + (config.targetMultiplier - 1) * easedProgress;
   } else {
     raw = config.targetMultiplier * Math.exp((elapsed - config.earlyTargetMs) / config.lateSpeedMs);
   }
