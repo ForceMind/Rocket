@@ -710,13 +710,12 @@ function tick() {
   if (currentRound.phase === "flying") {
     const currentMultiplier = multiplierAt(timestamp);
     currentRound.currentMultiplier = currentMultiplier;
+    // Auto cashout targets below the crash point must settle even when one tick crosses both thresholds.
+    const changed = processAutoCashouts(currentMultiplier);
     if (currentMultiplier >= currentRound.crashMultiplier) {
       finishRound();
-    } else {
-      const changed = processAutoCashouts(currentMultiplier);
-      if (changed) {
-        saveDb();
-      }
+    } else if (changed) {
+      saveDb();
     }
   }
 
@@ -953,7 +952,8 @@ function httpError(statusCode, message) {
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
+    "X-Server-Time": String(Date.now())
   });
   res.end(JSON.stringify(payload));
 }

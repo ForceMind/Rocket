@@ -340,7 +340,7 @@ autoCashout < crashMultiplier
 currentMultiplier >= autoCashout
 ```
 
-Auto Cashout 是服务端结算逻辑。前端只在下注时提交 `autoCashout` 目标倍率，后续不需要再发送提现请求。如果自动提现倍率大于或等于爆点，则爆炸优先，自动提现失败。
+Auto Cashout 是服务端结算逻辑。前端只在下注时提交 `autoCashout` 目标倍率，后续不需要再发送提现请求。服务端每个 tick 会先结算所有 `autoCashout < crashMultiplier` 且已到达目标倍率的注单，再判断爆炸，避免离散 tick 同时跨过自动跳出点和爆点时漏结算。如果自动提现倍率大于或等于爆点，则爆炸优先，自动提现失败。
 
 延迟提示：
 
@@ -389,7 +389,7 @@ for each bot:
 
 飞行中不持续推送倍率。前端收到 `flight_start.launchAt` 后本地计算倍率显示。增量事件应用失败时，前端会拉取 `/api/state` 做一次完整校准。
 
-延迟显示使用 WebSocket ping/pong，不再依赖 HTTP `/api/ping` 定时请求。
+延迟显示使用 WebSocket ping/pong，不再依赖 HTTP `/api/ping` 定时请求。前端收到服务端时间后，用浏览器单调时钟 `performance.now()` 推进 `serverNow()`，不依赖用户本机系统时间。页面从后台恢复、重新获得焦点或 bfcache 恢复时，会强制发送一次 ping 并拉取 `/api/state` 校准当前回合。
 
 ## 12. 持久化
 

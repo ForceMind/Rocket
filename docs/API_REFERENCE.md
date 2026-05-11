@@ -20,6 +20,7 @@ https://localhost:3000
 - HTTP 响应使用 JSON。
 - 金额在接口输出中通常是普通数字，例如 `10`、`900.00`。
 - 服务端内部金额使用 cents 整数保存。
+- HTTP JSON 响应头包含 `X-Server-Time`，值为服务端当前毫秒时间戳。前端用该值和 WebSocket `serverTime` 校准显示时钟，不依赖用户本机系统时间。
 
 错误格式：
 

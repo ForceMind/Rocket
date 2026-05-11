@@ -68,7 +68,9 @@ let explosionStartedAt = 0;
 let trackedRoundId = null;
 let betStatusById = new Map();
 let renderedChipSignature = "";
-let serverTimeOffset = 0;
+let serverClockSynced = false;
+let serverClockTime = 0;
+let serverClockPerf = 0;
 let currentLatencyMs = null;
 let latencyTimer = null;
 let latencyInFlight = false;
@@ -110,7 +112,18 @@ function formatChip(value) {
 }
 
 function serverNow() {
-  return Date.now() + serverTimeOffset;
+  if (!serverClockSynced) return Date.now();
+  return serverClockTime + Math.max(0, performance.now() - serverClockPerf);
+}
+
+function syncServerClock(serverTime, transitMs = 0, receivedAt = performance.now()) {
+  const numericServerTime = Number(serverTime);
+  const numericTransit = Number(transitMs);
+  const numericReceivedAt = Number(receivedAt);
+  if (!Number.isFinite(numericServerTime)) return;
+  serverClockTime = numericServerTime + Math.max(0, Number.isFinite(numericTransit) ? numericTransit : 0);
+  serverClockPerf = Number.isFinite(numericReceivedAt) ? numericReceivedAt : performance.now();
+  serverClockSynced = true;
 }
 
 function maxDisplayMultiplier() {
@@ -176,10 +189,10 @@ function elapsedForMultiplier(multiplier, round = snapshot?.round) {
   return config.earlyTargetMs + config.lateSpeedMs * Math.log(value / config.targetMultiplier);
 }
 
-function refreshState(reason = "sync") {
+function refreshState(reason = "sync", force = false) {
   if (!session?.playerId || stateRefreshInFlight) return;
-  const now = Date.now();
-  if (now - lastStateRefreshAt < STATE_REFRESH_INTERVAL_MS) return;
+  const now = performance.now();
+  if (!force && now - lastStateRefreshAt < STATE_REFRESH_INTERVAL_MS) return;
   stateRefreshInFlight = true;
   lastStateRefreshAt = now;
   api(`/api/state?playerId=${encodeURIComponent(session.playerId)}`)
@@ -286,6 +299,7 @@ async function api(path, options = {}) {
     keepalive: Boolean(options.keepalive),
     body: options.body ? JSON.stringify(options.body) : undefined
   });
+  syncServerClock(response.headers.get("X-Server-Time"));
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || "Request failed");
@@ -296,7 +310,7 @@ async function api(path, options = {}) {
 function sendLatencyPing() {
   if (latencyInFlight || !source || source.readyState !== WebSocket.OPEN) return;
   latencyInFlight = true;
-  const clientTime = Date.now();
+  const clientTime = performance.now();
   try {
     source.send(JSON.stringify({ type: "ping", clientTime }));
   } catch {
@@ -316,7 +330,9 @@ function handleLatencyPong(data) {
   clearTimeout(latencyTimeout);
   const clientTime = Number(data.clientTime);
   if (!Number.isFinite(clientTime)) return;
-  const rtt = Math.max(1, Date.now() - clientTime);
+  const receivedAt = Number.isFinite(Number(data.receivedAt)) ? Number(data.receivedAt) : performance.now();
+  const rtt = Math.max(1, receivedAt - clientTime);
+  syncServerClock(data.serverTime, rtt / 2, receivedAt);
   currentLatencyMs = rtt;
   ui.connectionStatus.textContent = `${rtt} ms`;
   ui.connectionStatus.classList.add("online");
@@ -329,6 +345,15 @@ function startLatencyMonitor() {
   latencyInFlight = false;
   sendLatencyPing();
   latencyTimer = setInterval(sendLatencyPing, 3000);
+}
+
+function forceForegroundSync(reason = "foreground") {
+  if (!session?.playerId) return;
+  clearTimeout(latencyTimeout);
+  latencyInFlight = false;
+  sendLatencyPing();
+  refreshState(reason, true);
+  if (snapshot) render();
 }
 
 function saveSession(player) {
@@ -802,11 +827,16 @@ function connectEvents() {
   });
   socket.addEventListener("message", (event) => {
     if (source !== socket) return;
+    const receivedAt = performance.now();
     const message = JSON.parse(event.data);
-    if (message.serverTime) {
-      serverTimeOffset = message.serverTime - Date.now();
+    const data = message.data || {};
+    if (message.type === "pong") {
+      data.serverTime = message.serverTime;
+      data.receivedAt = receivedAt;
+    } else {
+      syncServerClock(message.serverTime, 0, receivedAt);
     }
-    handleRealtimeEvent(message.type, message.data || {});
+    handleRealtimeEvent(message.type, data);
   });
   socket.addEventListener("close", () => {
     if (source !== socket) return;
@@ -1613,6 +1643,20 @@ ui.tutorialDone?.addEventListener("click", () => {
 
 ui.tutorialReplay?.addEventListener("click", () => {
   runTutorialDemo();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    forceForegroundSync("visible");
+  }
+});
+
+window.addEventListener("focus", () => {
+  forceForegroundSync("focus");
+});
+
+window.addEventListener("pageshow", () => {
+  forceForegroundSync("pageshow");
 });
 
 setInterval(() => {
