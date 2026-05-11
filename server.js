@@ -374,24 +374,24 @@ function prizePoolCapMultiplier(round = currentRound, prizePoolCents = db.settin
   return Number(clamp(cap, 1, db.settings.maxCrashMultiplier).toFixed(2));
 }
 
-function projectedPrizePoolCap(extraBetCents) {
-  const projectedPool = db.settings.prizePoolCents + extraBetCents;
-  const projectedOpenBets = humanOpenBetCents() + extraBetCents;
-  if (projectedOpenBets <= 0) return db.settings.maxCrashMultiplier;
-  return Math.floor((projectedPool / projectedOpenBets) * 100) / 100;
+function updateEffectiveCrashMultiplier(reason = "pool") {
+  if (!currentRound || currentRound.phase === "crashed") return false;
+  const baseCrash = Number(currentRound.randomCrashMultiplier || currentRound.crashMultiplier || 1);
+  const humanOpenCents = humanOpenBetCents(currentRound);
+  const cap = humanOpenCents > 0 ? prizePoolCapMultiplier(currentRound) : baseCrash;
+  const nextCrash = Number(Math.min(baseCrash, cap).toFixed(2));
+  const wasChanged = currentRound.crashMultiplier !== nextCrash
+    || currentRound.poolCapMultiplier !== cap
+    || currentRound.poolCapped !== (humanOpenCents > 0 && cap < baseCrash);
+  currentRound.poolCapMultiplier = cap;
+  currentRound.crashMultiplier = nextCrash;
+  currentRound.poolCapped = humanOpenCents > 0 && cap < baseCrash;
+  currentRound.poolCapReason = currentRound.poolCapped ? reason : null;
+  return wasChanged;
 }
 
 function applyPrizePoolCap(reason = "pool") {
-  if (!currentRound || currentRound.phase !== "betting") return false;
-  const cap = prizePoolCapMultiplier(currentRound);
-  currentRound.poolCapMultiplier = cap;
-  if (humanOpenBetCents(currentRound) <= 0 || currentRound.crashMultiplier <= cap) {
-    return false;
-  }
-  currentRound.crashMultiplier = Number(cap.toFixed(2));
-  currentRound.poolCapped = true;
-  currentRound.poolCapReason = reason;
-  return true;
+  return updateEffectiveCrashMultiplier(reason);
 }
 
 function applyBotOnlyHighFlight() {
@@ -409,7 +409,8 @@ function applyBotOnlyHighFlight() {
 
   const min = Number(db.settings.botOnlyHighFlightMin || 100);
   const max = Number(db.settings.botOnlyHighFlightMax || 500);
-  currentRound.crashMultiplier = randomMultiplier(min, max);
+  currentRound.randomCrashMultiplier = randomMultiplier(min, max);
+  currentRound.crashMultiplier = currentRound.randomCrashMultiplier;
   currentRound.botOnlyHighFlight = true;
   return true;
 }
@@ -536,6 +537,7 @@ function createRound() {
     seedHash: sha256(serverSeed),
     serverSeed,
     hmac: crash.hmac,
+    randomCrashMultiplier: crash.multiplier,
     crashMultiplier: crash.multiplier,
     currentMultiplier: 1,
     createdAt,
@@ -602,6 +604,7 @@ function finishRound() {
     seedHash: currentRound.seedHash,
     serverSeed: currentRound.serverSeed,
     hmac: currentRound.hmac,
+    randomCrashMultiplier: currentRound.randomCrashMultiplier,
     crashMultiplier: currentRound.crashMultiplier,
     forced: currentRound.forced,
     botOnlyHighFlight: currentRound.botOnlyHighFlight,
@@ -641,15 +644,22 @@ function finishRound() {
 function processAutoCashouts(currentMultiplier) {
   if (!currentRound || currentRound.phase !== "flying") return false;
   let changed = false;
-  for (const bet of currentRound.bets) {
-    if (bet.status !== "open" || !bet.autoCashout) continue;
-    if (bet.autoCashout < currentRound.crashMultiplier && currentMultiplier >= bet.autoCashout) {
-      const settled = cashoutBet(bet, bet.autoCashout, "auto");
-      if (settled) {
-        emitCashout(settled);
-        changed = true;
-      }
+  while (true) {
+    updateEffectiveCrashMultiplier("auto-cashout");
+    const bet = currentRound.bets
+      .filter((item) => item.status === "open"
+        && item.autoCashout
+        && item.autoCashout < currentRound.crashMultiplier
+        && currentMultiplier >= item.autoCashout)
+      .sort((a, b) => a.autoCashout - b.autoCashout)[0];
+    if (!bet) break;
+    const settled = cashoutBet(bet, bet.autoCashout, "auto");
+    if (!settled) {
+      break;
     }
+    emitCashout(settled);
+    updateEffectiveCrashMultiplier("auto-cashout");
+    changed = true;
   }
   return changed;
 }
@@ -660,10 +670,6 @@ function cashoutBet(bet, multiplier, mode) {
 
   const safeMultiplier = Number(clamp(multiplier, 1, db.settings.maxCrashMultiplier).toFixed(2));
   const payoutCents = Math.floor((bet.amountCents * Math.round(safeMultiplier * 100)) / 100);
-
-  if (player && payoutCents > db.settings.prizePoolCents) {
-    return null;
-  }
 
   bet.status = "cashed";
   bet.cashoutMode = mode;
@@ -710,11 +716,11 @@ function tick() {
   if (currentRound.phase === "flying") {
     const currentMultiplier = multiplierAt(timestamp);
     currentRound.currentMultiplier = currentMultiplier;
-    // Auto cashout targets below the crash point must settle even when one tick crosses both thresholds.
     const changed = processAutoCashouts(currentMultiplier);
+    const capChanged = updateEffectiveCrashMultiplier("tick");
     if (currentMultiplier >= currentRound.crashMultiplier) {
       finishRound();
-    } else if (changed) {
+    } else if (changed || capChanged) {
       saveDb();
     }
   }
@@ -1234,10 +1240,6 @@ async function handleApi(req, res, url) {
     if (amountCents > player.balanceCents) {
       throw httpError(400, "Insufficient balance");
     }
-    const projectedCap = projectedPrizePoolCap(amountCents);
-    if (projectedCap < 1.01) {
-      throw httpError(400, "Prize pool cannot cover the minimum payout for this bet");
-    }
     if (currentRound.bets.some((bet) => bet.playerId === player.id)) {
       throw httpError(409, "You already placed a bet this round");
     }
@@ -1266,7 +1268,7 @@ async function handleApi(req, res, url) {
       settledAt: null
     };
     currentRound.bets.push(bet);
-    applyPrizePoolCap("human-bet");
+    updateEffectiveCrashMultiplier("human-bet");
     audit("bet.placed", { playerId: player.id, roundId: currentRound.id, amountCents });
     saveDb();
     broadcastEvent("bet_placed", { roundId: currentRound.id, bet: publicBet(bet) });
@@ -1284,15 +1286,16 @@ async function handleApi(req, res, url) {
     if (!bet) {
       throw httpError(404, "No open bet to cash out");
     }
+    updateEffectiveCrashMultiplier("manual-cashout");
     const currentMultiplier = multiplierAt();
+    updateEffectiveCrashMultiplier("manual-cashout");
     if (currentMultiplier >= currentRound.crashMultiplier) {
       finishRound();
       throw httpError(409, "The rocket has already crashed");
     }
     const settled = cashoutBet(bet, currentMultiplier, "manual");
-    if (!settled) {
-      throw httpError(409, "Prize pool cannot cover this payout");
-    }
+    if (!settled) throw httpError(409, "Unable to cash out this bet");
+    updateEffectiveCrashMultiplier("manual-cashout");
     audit("bet.cashout", {
       playerId: player.id,
       roundId: currentRound.id,
@@ -1478,6 +1481,7 @@ async function handleApi(req, res, url) {
     const nextCrash = requested
       ? clamp(Number(requested.toFixed(2)), currentMultiplier, maxAllowed)
       : currentMultiplier;
+    currentRound.randomCrashMultiplier = Number(nextCrash.toFixed(2));
     currentRound.crashMultiplier = Number(nextCrash.toFixed(2));
     currentRound.forced = true;
     audit("admin.force-crash", { roundId: currentRound.id, multiplier: currentRound.crashMultiplier });

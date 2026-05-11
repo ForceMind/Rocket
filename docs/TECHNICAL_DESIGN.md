@@ -309,11 +309,14 @@ crashMultiplier = clamp(crashMultiplier, 1.01, maxCrashMultiplier)
 
 ## 8. 奖池承受上限
 
-真实玩家下注后，服务端计算奖池最多能承受多少倍：
+真实玩家下注和 Cash Out 后，服务端计算剩余未结算真实玩家下注最多能承受多少倍：
 
 ```text
 poolCapMultiplier = prizePool / humanOpenBetAmount
-crashMultiplier = min(randomCrashMultiplier, poolCapMultiplier, maxCrashMultiplier)
+effectiveCrashMultiplier = min(randomCrashMultiplier, poolCapMultiplier, maxCrashMultiplier)
+
+if currentMultiplier >= effectiveCrashMultiplier:
+  finishRound()
 ```
 
 规则：
@@ -322,6 +325,8 @@ crashMultiplier = min(randomCrashMultiplier, poolCapMultiplier, maxCrashMultipli
 - 机器人下注不进入奖池，也不影响奖池上限。
 - 若真实玩家下注总额为 100，奖池为 1000，奖池最多承受 10x。
 - 如果随机爆点为 25x，真实爆点会被压到 10x。
+- 如果玩家陆续 Cash Out，奖池余额和未结算下注额都会变化，服务端必须重新计算有效爆点。
+- 奖池不足不能作为合法下注或合法 Cash Out 的直接拒绝理由；风险通过有效爆点提前爆炸控制。
 
 ## 9. 返还公式
 

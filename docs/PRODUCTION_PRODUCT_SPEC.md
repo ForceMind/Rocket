@@ -69,6 +69,7 @@ probability = bps / 10000
 - 下注成功后，立即从玩家余额扣除下注金额。
 - 真实玩家下注金额立即加入奖池。
 - 下注成功后，该注单状态为 `open`。
+- 下注不会因为奖池上限不足直接拒绝；奖池风险通过降低本局实际爆点控制。
 
 数学表示：
 
@@ -78,7 +79,6 @@ balance >= A
 minBetCents <= A <= maxBetCents
 A in betTiersCents
 player has no bet in current round
-projectedPoolCap(A) >= 1.01
 
 balanceAfterBet = balanceBeforeBet - A
 prizePoolAfterBet = prizePoolBeforeBet + A
@@ -95,14 +95,13 @@ prizePoolAfterBet = prizePoolBeforeBet + A
 - 当前回合处于 `Flying`。
 - 玩家存在本局 `open` 注单。
 - 服务端当前倍率小于本局爆点。
-- 奖池余额足够支付返还。
 
 失败条件：
 
 - 未起飞或已经爆炸。
 - 玩家没有本局未结算注单。
 - 服务端当前倍率大于或等于爆点。
-- 奖池余额不足。
+- 如果剩余奖池已经不足以支撑当前倍率，服务端应先通过奖池上限触发爆炸，而不是拒绝 Cash Out。
 
 数学表示：
 
@@ -114,7 +113,6 @@ manual cashout succeeds if:
 round.phase = Flying
 bet.status = open
 M < C
-payoutCents <= prizePoolCents
 
 manual cashout fails if:
 M >= C
@@ -144,7 +142,6 @@ auto cashout succeeds if:
 bet.status = open
 T < C
 M >= T
-payoutCents <= prizePoolCents
 
 auto cashout fails if:
 T >= C
@@ -293,7 +290,7 @@ C = clamp(C0, 1.01, maxC)
 - `instantCrashBps` 控制 `1.00x` 爆炸概率。
 - `houseEdgeBps` 控制平台边际，数值越高，整体爆点越低。
 - `maxCrashMultiplier` 是普通随机爆点的上限。
-- 奖池上限可能在下注后进一步压低本局实际爆点。
+- 奖池上限会在下注和真实玩家 Cash Out 后动态影响本局实际爆点。
 
 ## 8. 奖池和风险控制
 
@@ -301,9 +298,9 @@ C = clamp(C0, 1.01, maxC)
 
 奖池用于限制平台最大赔付风险。真实玩家下注加入奖池，真实玩家 Cash Out 从奖池扣除。机器人不影响奖池。
 
-当有真实玩家下注时，服务端计算当前奖池最多能支持的爆点。如果随机爆点高于奖池可承受上限，服务端将本局实际爆点压低到奖池可承受上限。这样可以避免一局中所有真实玩家都在最高可达倍率 Cash Out 时，奖池无法覆盖。
+奖池不作为玩家侧的拒绝理由。玩家不知道奖池余额，也不知道奖池如何影响爆点。服务端需要在后台持续计算剩余未逃跑真实玩家的最大可赔付倍率，并用该倍率控制本局实际爆点。
 
-下注前还要计算加入该下注后的预计奖池上限。如果预计上限低于 `1.01x`，说明奖池连最低有效返还都无法覆盖，应拒绝下注。
+如果随机爆点高于奖池可承受上限，本局实际爆点应降为奖池可承受上限。火箭起飞后，每当真实玩家 Cash Out 后，剩余未逃跑玩家的总下注会变化，奖池余额也会变化，因此奖池可承受上限必须重新计算。若当前服务器倍率达到新的奖池上限，服务端应直接判定火箭爆炸，而不是在玩家 Cash Out 时返回“奖池不足”。
 
 ### 8.2 数学公式
 
@@ -319,31 +316,28 @@ maxC = maxCrashMultiplier
 
 ```text
 if B <= 0:
-  poolCap = maxC
+  poolCap = randomCrashMultiplier
 else:
   poolCap = clamp(floor((P / B) * 100) / 100, 1.00, maxC)
 ```
 
-玩家准备下注 `A` 时的预计上限：
+实际爆点：
 
 ```text
-P' = P + A
-B' = B + A
-projectedPoolCap = floor((P' / B') * 100) / 100
-
-reject bet if projectedPoolCap < 1.01
+effectiveCrashMultiplier = min(randomCrashMultiplier, poolCap)
 ```
 
-下注成功后的爆点限制：
+飞行中动态更新：
 
 ```text
-actualCrashMultiplier = min(randomCrashMultiplier, poolCap)
-```
+after each human cashout:
+  P = prizePoolCents after payout
+  B = sum(remaining open human bet amountCents)
+  poolCap = floor((P / B) * 100) / 100 if B > 0
+  effectiveCrashMultiplier = min(randomCrashMultiplier, poolCap)
 
-Cash Out 时的奖池校验：
-
-```text
-reject cashout if payoutCents > prizePoolCents
+if currentMultiplier >= effectiveCrashMultiplier:
+  crash round
 ```
 
 ### 8.3 运营要求
@@ -351,7 +345,9 @@ reject cashout if payoutCents > prizePoolCents
 - 奖池余额必须可由后台手动设置。
 - 平台盈亏和回合记录必须只统计真实玩家金额。
 - 机器人下注和机器人返还不得进入奖池、总下注、总返还或平台盈亏。
-- 奖池不足时，服务端应优先拒绝新下注或拒绝无法覆盖的 Cash Out，不能让奖池变为负数。
+- 奖池不足不能作为合法下注或合法 Cash Out 的直接拒绝理由。
+- 奖池风险必须通过有效爆点控制：当前倍率达到奖池可承受上限时，服务端判定爆炸。
+- 玩家端不得展示奖池如何影响爆点。
 
 ## 9. 飞行倍率曲线
 
@@ -782,7 +778,7 @@ open -> lost
 7. Auto Cashout 目标低于爆点时，必须保证在爆炸前结算。
 8. 当前倍率达到或超过爆点时，所有 open 注单结算为 lost。
 9. 奖池不能为负数。
-10. 真实玩家返还不能超过奖池余额。
+10. 奖池风险必须通过动态爆点控制，不能通过向玩家暴露“奖池不足”来拒绝合法操作。
 11. 随机爆点必须可通过公开的 serverSeed、nonce 和 HMAC 复算。
 12. 爆点在回合爆炸前不能公开给玩家端。
 13. 机器人金额不得计入奖池、真实总下注、真实总返还和平台盈亏。
