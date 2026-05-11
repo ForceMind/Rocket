@@ -6,6 +6,7 @@ Rocket Crash Platform 是一个本地开发版 Rocket / Crash 多人实时下注
 
 ## 文档目录
 
+- [团队产品文档](docs/TEAM_PRODUCT_GUIDE.md)：给产品、前端、后端、美术和运营看的大白话说明，覆盖玩法、回合流程、奖池、曲线、机器人、新手引导和验收清单。
 - [产品文档](docs/PRODUCT_SPEC.md)：产品定位、用户角色、页面功能、流程、需求范围和验收标准。
 - [技术设计](docs/TECHNICAL_DESIGN.md)：系统架构、回合状态机、爆点算法、飞行公式、奖池规则和机器人调度。
 - [接口文档](docs/API_REFERENCE.md)：HTTP API、WebSocket 事件、请求响应和错误口径。
@@ -21,7 +22,7 @@ Rocket Crash Platform 是一个本地开发版 Rocket / Crash 多人实时下注
 - 机器人：按后台配置的数量和下注间隔陆续下注，按自动提现倍率实时跳出。机器人金额不计入平台盈亏和回合金额，只统计人数。
 - 奖池：真实玩家下注进入奖池，真实玩家提现从奖池扣除；真实玩家局的最大爆点受奖池承受能力限制。
 - 实时通信：玩家端使用 WebSocket 增量事件推送。下注和 Cash Out 只推单条变化，飞行中不持续推送倍率，前端根据 `launchAt` 本地计算显示，服务端仍负责权威结算。
-- 公平性：每局开始公开 `serverSeedHash`，爆炸后公开 `serverSeed` 和 HMAC，便于复算随机爆点。后台强制爆炸的回合会标记为 `forced`。
+- 公平性：玩家端不公开 seed hash 或爆点数据；后台可查看内部 Hash、Seed 和 HMAC，便于本地调试和复算。后台强制爆炸的回合会标记为 `forced`。
 
 ## 快速启动
 
@@ -166,7 +167,7 @@ Rocket/
   data/
     db.json                 本地数据，运行时生成
     runtime.env             Linux 启动脚本写入的运行端口
-  docs/                     产品、技术、接口、运营、部署文档
+  docs/                     团队产品、产品、技术、接口、运营、部署文档
   start-rocket.bat          Windows 一键启动
   start-linux.sh            Linux 前台启动，端口自增
   deploy-opencloudos.sh     OpenCloudOS systemd 部署

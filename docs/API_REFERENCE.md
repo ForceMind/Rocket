@@ -592,7 +592,7 @@ wss://localhost:3000/ws?playerId=player_...
 }
 ```
 
-爆炸后才公开 `crashMultiplier`、`serverSeed` 和 `hmac`。
+玩家端爆炸事件只公开 `crashMultiplier` 和结算状态，不公开 `seedHash`、`serverSeed` 或 `hmac`。
 
 ### 5.8 settings_updated
 

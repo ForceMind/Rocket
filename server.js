@@ -755,7 +755,6 @@ function publicRound(round = currentRound) {
     id: round.id,
     nonce: round.nonce,
     phase: round.phase,
-    seedHash: round.seedHash,
     currentMultiplier: Number((round.currentMultiplier || 1).toFixed(2)),
     bettingEndsAt: round.bettingEndsAt,
     launchAt: round.launchAt,
@@ -770,8 +769,6 @@ function publicRound(round = currentRound) {
   };
   if (round.phase === "crashed") {
     base.crashMultiplier = round.crashMultiplier;
-    base.serverSeed = round.serverSeed;
-    base.hmac = round.hmac;
   }
   return base;
 }
@@ -781,6 +778,8 @@ function adminRound(round = currentRound) {
   return {
     ...publicRound(round),
     crashMultiplier: round.crashMultiplier,
+    seedHash: round.seedHash,
+    serverSeed: round.serverSeed,
     hmac: round.hmac
   };
 }

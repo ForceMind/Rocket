@@ -83,9 +83,9 @@ data/db.json
 | `id` | 回合 ID |
 | `nonce` | 递增局号，用于公平性计算 |
 | `phase` | `betting` / `flying` / `crashed` |
-| `seedHash` | 开局公开的 serverSeed 哈希 |
-| `serverSeed` | 爆炸后公开的种子 |
-| `hmac` | HMAC 结果 |
+| `seedHash` | 内部审计用 serverSeed 哈希，不公开给玩家端 |
+| `serverSeed` | 内部审计用种子，不公开给玩家端 |
+| `hmac` | 内部审计用 HMAC 结果，不公开给玩家端 |
 | `crashMultiplier` | 服务端预设爆点 |
 | `currentMultiplier` | 服务端当前倍率快照 |
 | `bettingEndsAt` | 下注截止时间 |
@@ -267,7 +267,7 @@ serverSeed = random 32 bytes
 serverSeedHash = sha256(serverSeed)
 ```
 
-开局前只公开 `serverSeedHash`，爆炸后才公开 `serverSeed`。
+玩家端不公开 `serverSeedHash`、`serverSeed` 或 `hmac`。生产版本如需复核，可在后台或审计系统保留这些字段。
 
 ### 7.2 随机数
 
