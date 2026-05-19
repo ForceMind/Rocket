@@ -2172,11 +2172,31 @@ body:not(.admin-body) .bet-form > .switch-line input {
 body:not(.admin-body) .bet-form > .primary-button.action-button {
   grid-column: 3;
   grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.08;
   align-self: stretch;
 }
 
 body:not(.admin-body) .action-button.cashout-mode {
   background: linear-gradient(135deg, var(--amber), #ffd37c);
+}
+
+body:not(.admin-body) .action-button-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+body:not(.admin-body) .action-button-detail {
+  display: block;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.82;
 }
 
 body:not(.admin-body) .action-button:disabled {

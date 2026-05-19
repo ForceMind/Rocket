@@ -93,6 +93,12 @@ function formatMoney(value) {
   });
 }
 
+function formatLatency(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-- ms";
+  return `${Math.max(0, Math.round(number))} ms`;
+}
+
 function formatMultiplier(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "--";
@@ -109,6 +115,14 @@ function formatChip(value) {
   if (number >= 1000 && number % 1000 === 0) return `${number / 1000}K`;
   if (number >= 1000) return `${(number / 1000).toFixed(1).replace(/\.0$/, "")}K`;
   return formatMoney(number).replace(".00", "");
+}
+
+function projectedPayout(amount, multiplier) {
+  const amountCents = Math.round(Number(amount || 0) * 100);
+  const safeMultiplier = Math.max(1, Number(multiplier || 1));
+  if (!Number.isFinite(amountCents) || !Number.isFinite(safeMultiplier) || amountCents <= 0) return 0;
+  const multiplierCents = Math.round(safeMultiplier * 100);
+  return Math.floor((amountCents * multiplierCents) / 100) / 100;
 }
 
 function serverNow() {
@@ -285,7 +299,7 @@ function showMessage(text, isError = false) {
 
 function resetLatencyStatus() {
   currentLatencyMs = null;
-  ui.connectionStatus.textContent = "-- ms";
+  ui.connectionStatus.textContent = formatLatency(null);
   ui.connectionStatus.classList.remove("online", "slow");
 }
 
@@ -334,7 +348,7 @@ function handleLatencyPong(data) {
   const rtt = Math.max(1, receivedAt - clientTime);
   syncServerClock(data.serverTime, rtt / 2, receivedAt);
   currentLatencyMs = rtt;
-  ui.connectionStatus.textContent = `${rtt} ms`;
+  ui.connectionStatus.textContent = formatLatency(rtt);
   ui.connectionStatus.classList.add("online");
   ui.connectionStatus.classList.toggle("slow", rtt > HIGH_LATENCY_THRESHOLD_MS);
 }
@@ -746,12 +760,29 @@ function renderTutorialView() {
   snapshot = realSnapshot;
 }
 
+function setActionButtonContent(label, sublabel = "") {
+  const main = document.createElement("span");
+  main.className = "action-button-label";
+  main.textContent = label;
+
+  if (!sublabel) {
+    ui.placeBetButton.replaceChildren(main);
+    return;
+  }
+
+  const detail = document.createElement("span");
+  detail.className = "action-button-detail";
+  detail.textContent = sublabel;
+  ui.placeBetButton.replaceChildren(main, detail);
+}
+
 function renderTutorialActions() {
   ui.amountInput.value = tutorialState.amount || ui.amountInput.value || 10;
   ui.autoInput.value = formatInputMultiplier(tutorialState.autoCashout || 2);
   ui.autoInput.disabled = !ui.autoToggle.checked && tutorialState.step !== "autoCashout";
 
   let label = "Choose Chip";
+  let sublabel = "";
   let disabled = true;
   let cashoutMode = false;
   if (tutorialState.step === "placeBet") {
@@ -760,7 +791,8 @@ function renderTutorialActions() {
   } else if (tutorialState.step === "launching") {
     label = `Launching in ${secondsUntil(tutorialState.launchEndsAt)}s`;
   } else if (tutorialState.step === "cashout") {
-    label = `Cash Out ${formatMultiplier(tutorialState.multiplier)}`;
+    label = "Cash Out";
+    sublabel = formatMoney(projectedPayout(tutorialState.amount || 10, tutorialState.multiplier));
     disabled = false;
     cashoutMode = true;
   } else if (tutorialState.step === "crashing" || tutorialState.step === "lossLesson") {
@@ -769,7 +801,7 @@ function renderTutorialActions() {
     label = "Auto Cashout";
   }
   ui.placeBetButton.dataset.mode = "tutorial";
-  ui.placeBetButton.textContent = label;
+  setActionButtonContent(label, sublabel);
   ui.placeBetButton.disabled = disabled;
   ui.placeBetButton.classList.toggle("cashout-mode", cashoutMode);
 }
@@ -1107,6 +1139,7 @@ function renderActions() {
 
   let mode = "wait";
   let label = "Waiting";
+  let sublabel = "";
   let disabled = true;
 
   if (canCashout) {
@@ -1117,7 +1150,8 @@ function renderActions() {
       const cashoutDisplay = readoutRoundId === round.id && readoutMultiplier !== null
         ? readoutMultiplier
         : displayMultiplier(round);
-      label = `Cash Out ${formatMultiplier(cashoutDisplay)}`;
+      label = "Cash Out";
+      sublabel = formatMoney(projectedPayout(myBet.amount, cashoutDisplay));
       disabled = false;
     }
   } else if (canBet) {
@@ -1133,7 +1167,7 @@ function renderActions() {
   }
 
   ui.placeBetButton.dataset.mode = mode;
-  ui.placeBetButton.textContent = label;
+  setActionButtonContent(label, sublabel);
   ui.placeBetButton.disabled = disabled;
   ui.placeBetButton.classList.toggle("cashout-mode", mode === "cashout");
 }
@@ -1146,7 +1180,7 @@ function confirmHighLatencyBet() {
     ? "Auto Cashout is enabled and will be handled by the server."
     : "Auto Cashout is recommended before placing this bet.";
   return window.confirm(
-    `Your latency is ${currentLatencyMs} ms, which is over 1 second.\n\n` +
+    `Your latency is ${formatLatency(currentLatencyMs)}, which is over 1 second.\n\n` +
     "The rocket display may be delayed, and manual cashout may fail even if the screen looks safe.\n\n" +
     `${autoNote}\n\nPlace this bet anyway?`
   );
