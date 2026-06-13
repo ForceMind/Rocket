@@ -64,6 +64,21 @@ function initTabs() {
       document.getElementById(targetId).classList.add('active');
     });
   });
+
+  document.querySelectorAll('.inner-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.inner-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.inner-tab-content').forEach(c => {
+        c.classList.remove('active');
+        c.style.display = 'none';
+      });
+      tab.classList.add('active');
+      const targetId = tab.getAttribute('data-tab');
+      const targetEl = document.getElementById(targetId);
+      targetEl.classList.add('active');
+      targetEl.style.display = 'block';
+    });
+  });
 }
 
 function formatMoney(value) {

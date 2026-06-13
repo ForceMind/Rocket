@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
   curveLateSpeedMs: 12000,
   
   targetPrizePoolCents: 1000000, // 10000 coins
+  poolOverflowWaterRatioBps: 3000, // 30% goes to water budget
   rtpHighThresholdBps: 10000, // >= 100% RTP (Platform losing)
   rtpLowThresholdBps: 9000,   // <= 90% RTP (Platform winning big)
   personalHighRtpBps: 12000,  // >= 120% (Personal solo limit)
@@ -823,14 +824,15 @@ function finishRound() {
     db.settings.prizePoolCents += netWin;
   }
 
-  const targetPool = db.settings.targetPrizePoolCents || 1000000;
-  if (db.settings.prizePoolCents > targetPool) {
-    const overflow = db.settings.prizePoolCents - targetPool;
-    db.settings.prizePoolCents = targetPool;
-    const waterShare = Math.floor(overflow * 0.30);
-    const profitShare = overflow - waterShare;
+  if (db.settings.targetPrizePoolCents > 0 && db.settings.prizePoolCents > db.settings.targetPrizePoolCents) {
+    const overflowCents = db.settings.prizePoolCents - db.settings.targetPrizePoolCents;
+    const waterRatio = (db.settings.poolOverflowWaterRatioBps || 3000) / 10000;
+    const waterShare = Math.floor(overflowCents * waterRatio);
+    const profitShare = overflowCents - waterShare;
+    
     db.waterBudgetCents += waterShare;
-    db.metricOffsets.houseProfitCents += profitShare;
+    db.metricOffsets.houseProfitCents = (db.metricOffsets.houseProfitCents || 0) + profitShare;
+    db.settings.prizePoolCents = db.settings.targetPrizePoolCents;
   }
 
   db.rounds.unshift({
@@ -1469,6 +1471,7 @@ function adminSnapshot() {
       botMinBet: centsToAmount(db.settings.botMinBetCents),
       botMaxBet: centsToAmount(db.settings.botMaxBetCents),
       targetPrizePool: centsToAmount(db.settings.targetPrizePoolCents),
+      poolOverflowWaterRatioBps: db.settings.poolOverflowWaterRatioBps,
       singlePayoutCap: centsToAmount(db.settings.singlePayoutCapCents)
     },
     metrics: {
@@ -1897,6 +1900,7 @@ async function handleApi(req, res, url) {
       rtpHighThresholdBps: [1000, 20000],
       rtpLowThresholdBps: [1000, 20000],
       personalHighRtpBps: [1000, 20000],
+      poolOverflowWaterRatioBps: [0, 10000],
       botMaxCount: [0, 120],
       botBetIntervalMinMs: [50, 5000],
       botBetIntervalMaxMs: [50, 5000],

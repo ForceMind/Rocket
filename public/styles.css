@@ -2335,3 +2335,34 @@ body:not(.admin-body) .table-panel .state-lost {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
+
+/* --- Inner Tabs --- */
+.inner-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 8px;
+}
+.inner-tab {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -10px;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+.inner-tab:hover {
+  color: var(--text);
+}
+.inner-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.inner-tab-content {
+  grid-column: 1 / -1;
+}

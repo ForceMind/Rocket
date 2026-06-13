@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rocket Admin</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260613-3" />
+    <link rel="stylesheet" href="/styles.css?v=20260613-4" />
   </head>
   <body class="admin-body">
     <div class="app-shell">
@@ -77,90 +77,127 @@
               </label>
             </div>
 
-            <div class="admin-subgrid">
-              <div>
-                <div class="subsection-title">
-                  <h3>每日数据</h3>
-                  <span>按天汇总真人金额</span>
-                </div>
-                <div class="table-wrap admin-table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>日期</th>
-                        <th>局数</th>
-                        <th>玩家</th>
-                        <th>下注</th>
-                        <th>返还</th>
-                        <th>RTP</th>
-                        <th>盈亏</th>
-                        <th>平均爆点</th>
-                        <th>最高爆点</th>
-                      </tr>
-                    </thead>
-                    <tbody id="dailyBody"></tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div>
-                <div class="subsection-title">
-                  <h3>用户汇总</h3>
-                  <span>点击查看按天和按局明细</span>
-                </div>
-                <div class="table-wrap admin-table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>玩家</th>
-                        <th>局数</th>
-                        <th>下注</th>
-                        <th>返还</th>
-                        <th>RTP</th>
-                        <th>净输赢</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody id="userSummaryBody"></tbody>
-                  </table>
-                </div>
-              </div>
+            <div class="admin-tabs inner-tabs" style="margin-top: 15px;">
+              <button class="inner-tab active" data-tab="subtab-daily">每日与用户汇总</button>
+              <button class="inner-tab" data-tab="subtab-user">指定玩家明细</button>
+              <button class="inner-tab" data-tab="subtab-rounds">历史每局记录</button>
             </div>
-          </section>
 
-          <section class="admin-panel wide">
-            <div class="section-title">
-              <h2>用户详细数据</h2>
-              <span id="selectedUserTitle">全部玩家</span>
+            <div id="subtab-daily" class="inner-tab-content active" style="display: block;">
+              <section class="admin-panel wide" style="background: transparent; border: none; padding: 0;">
+                <div class="admin-subgrid">
+                  <div class="admin-panel">
+                    <div class="subsection-title" style="padding: 16px;">
+                      <h3>每日数据</h3>
+                      <span>按天汇总真人金额</span>
+                    </div>
+                    <div class="table-wrap admin-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>日期</th>
+                            <th>局数</th>
+                            <th>玩家</th>
+                            <th>下注</th>
+                            <th>返还</th>
+                            <th>RTP</th>
+                            <th>盈亏</th>
+                            <th>平均爆点</th>
+                            <th>最高爆点</th>
+                          </tr>
+                        </thead>
+                        <tbody id="dailyBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="admin-panel">
+                    <div class="subsection-title" style="padding: 16px;">
+                      <h3>用户汇总</h3>
+                      <span>点击查看按天和按局明细</span>
+                    </div>
+                    <div class="table-wrap admin-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>玩家</th>
+                            <th>局数</th>
+                            <th>下注</th>
+                            <th>返还</th>
+                            <th>RTP</th>
+                            <th>净输赢</th>
+                            <th>操作</th>
+                          </tr>
+                        </thead>
+                        <tbody id="userSummaryBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
-            <div class="admin-subgrid">
-              <div>
-                <div class="subsection-title">
-                  <h3>按天明细</h3>
-                  <span>指定玩家时只显示该玩家</span>
+
+            <div id="subtab-user" class="inner-tab-content" style="display: none;">
+              <section class="admin-panel wide" style="background: transparent; border: none; padding: 0;">
+                <div class="section-title" style="padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px 8px 0 0; margin-bottom: 0; border-bottom: none;">
+                  <h2>用户详细数据</h2>
+                  <span id="selectedUserTitle">全部玩家</span>
                 </div>
-                <div class="table-wrap admin-table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>日期</th>
-                        <th>玩家</th>
-                        <th>局数</th>
-                        <th>下注</th>
-                        <th>返还</th>
-                        <th>RTP</th>
-                        <th>净输赢</th>
-                        <th>胜/负</th>
-                      </tr>
-                    </thead>
-                    <tbody id="userDailyBody"></tbody>
-                  </table>
+                <div class="admin-subgrid">
+                  <div class="admin-panel" style="border-radius: 0 0 0 8px;">
+                    <div class="subsection-title" style="padding: 16px; border-top: 1px solid var(--line);">
+                      <h3>按天明细</h3>
+                      <span>指定玩家时只显示该玩家</span>
+                    </div>
+                    <div class="table-wrap admin-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>日期</th>
+                            <th>玩家</th>
+                            <th>局数</th>
+                            <th>下注</th>
+                            <th>返还</th>
+                            <th>RTP</th>
+                            <th>净输赢</th>
+                            <th>胜/负</th>
+                          </tr>
+                        </thead>
+                        <tbody id="userDailyBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="admin-panel" style="border-radius: 0 0 8px 0;">
+                    <div class="subsection-title" style="padding: 16px; border-top: 1px solid var(--line);">
+                      <h3>按局明细</h3>
+                      <span>选择玩家后显示</span>
+                    </div>
+                    <div class="table-wrap admin-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>时间</th>
+                            <th>回合</th>
+                            <th>爆点</th>
+                            <th>下注</th>
+                            <th>返还</th>
+                            <th>净输赢</th>
+                            <th>状态</th>
+                          </tr>
+                        </thead>
+                        <tbody id="userRoundsBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div class="subsection-title">
-                  <h3>按局明细</h3>
-                  <span>选择玩家后显示</span>
+              </section>
+            </div>
+
+            <div id="subtab-rounds" class="inner-tab-content" style="display: none;">
+              <section class="admin-panel wide">
+                <div class="section-title">
+                  <h2>每局数据</h2>
+                  <span id="analyticsRoundCount">0 局</span>
                 </div>
                 <div class="table-wrap admin-table-scroll">
                   <table>
@@ -169,42 +206,19 @@
                         <th>时间</th>
                         <th>回合</th>
                         <th>爆点</th>
+                        <th>随机爆点</th>
+                        <th>真人/机器人</th>
                         <th>下注</th>
                         <th>返还</th>
-                        <th>净输赢</th>
+                        <th>RTP</th>
+                        <th>盈亏</th>
                         <th>状态</th>
                       </tr>
                     </thead>
-                    <tbody id="userRoundsBody"></tbody>
+                    <tbody id="analyticsRoundsBody"></tbody>
                   </table>
                 </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="admin-panel wide">
-            <div class="section-title">
-              <h2>每局数据</h2>
-              <span id="analyticsRoundCount">0 局</span>
-            </div>
-            <div class="table-wrap admin-table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>回合</th>
-                    <th>爆点</th>
-                    <th>随机爆点</th>
-                    <th>真人/机器人</th>
-                    <th>下注</th>
-                    <th>返还</th>
-                    <th>RTP</th>
-                    <th>盈亏</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody id="analyticsRoundsBody"></tbody>
-              </table>
+              </section>
             </div>
           </section>
         </div>
@@ -325,15 +339,23 @@
               
               <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">资金防线</h3>
               <label><span>目标奖池界线</span><input name="targetPrizePool" type="number" step="0.01" /><small>奖池超此金额即刻分流利润与放水预算。</small></label>
+              <label><span>放水池分流比例 bps</span><input name="poolOverflowWaterRatioBps" type="number" /><small>溢出金额进入放水池的比例 (默认3000 = 30%)。</small></label>
               <label><span>单次总赔付上限</span><input name="singlePayoutCap" type="number" step="0.01" /><small>防止单次巨额提现击穿底线。</small></label>
 
               <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">曲线与机器人</h3>
               <label><span>20x 到达时间 ms</span><input name="curveEarlyTargetMs" type="number" /><small>越大，20x 前越慢。</small></label>
               <label><span>前段曲线指数</span><input name="curveEarlyPower" type="number" step="0.01" /><small>越大，起飞初期越慢。</small></label>
               <label><span>20x 后加速 ms</span><input name="curveLateSpeedMs" type="number" /><small>越小，高倍增长越快。</small></label>
-              <label><span>机器人最少</span><input name="botMinCount" type="number" /><small>每局最少数量。</small></label>
-              <label><span>机器人最多</span><input name="botMaxCount" type="number" /><small>每局最多数量。</small></label>
+              <label><span>机器人启用</span><select name="botsEnabled"><option value="true">开启</option><option value="false">关闭</option></select><small>全局开关。</small></label>
+              <label><span>机器人最少数量</span><input name="botMinCount" type="number" /><small>每局最少数量。</small></label>
+              <label><span>机器人最多数量</span><input name="botMaxCount" type="number" /><small>每局最多数量。</small></label>
+              <label><span>下注间隔最小 ms</span><input name="botBetIntervalMinMs" type="number" /><small>机器人下注间隔下限。</small></label>
+              <label><span>下注间隔最大 ms</span><input name="botBetIntervalMaxMs" type="number" /><small>机器人下注间隔上限。</small></label>
+              <label><span>机器人最小下注</span><input name="botMinBet" type="number" step="0.01" /><small>最小下注额。</small></label>
+              <label><span>机器人最大下注</span><input name="botMaxBet" type="number" step="0.01" /><small>最大下注额。</small></label>
               <label><span>纯机器人高飞 bps</span><input name="botOnlyHighFlightBps" type="number" /><small>只有机器人时触发高倍飞行的概率。</small></label>
+              <label><span>高飞倍率下限</span><input name="botOnlyHighFlightMin" type="number" /><small>高倍飞行最低倍率。</small></label>
+              <label><span>高飞倍率上限</span><input name="botOnlyHighFlightMax" type="number" /><small>高倍飞行最高倍率。</small></label>
               
               <button class="primary-button" type="submit" style="grid-column: 1 / -1; margin-top: 20px;">保存所有参数</button>
             </form>
@@ -341,6 +363,6 @@
         </div>
       </main>
     </div>
-    <script src="/admin.js?v=20260613-2"></script>
+    <script src="/admin.js?v=20260613-4"></script>
   </body>
 </html>
