@@ -17,6 +17,7 @@ const DB_PATH = path.join(DATA_DIR, "db.json");
 const CURVE_TARGET_MULTIPLIER = 20;
 const CURVE_EARLY_LINEAR_WEIGHT = 0.02;
 const CRASH_HOLD_MS = 3000;
+const MAX_ROUND_HISTORY = 5000;
 
 function normalizeAdminPath(value) {
   const raw = String(value || "/manage").trim();
@@ -41,6 +42,13 @@ const DEFAULT_SETTINGS = {
   curveEarlyTargetMs: 35000,
   curveEarlyPower: 2.4,
   curveLateSpeedMs: 12000,
+  
+  targetPrizePoolCents: 1000000, // 10000 coins
+  rtpHighThresholdBps: 10000, // >= 100% RTP (Platform losing)
+  rtpLowThresholdBps: 9000,   // <= 90% RTP (Platform winning big)
+  personalHighRtpBps: 12000,  // >= 120% (Personal solo limit)
+  singlePayoutCapCents: 500000, // 500.00 coins max single payout
+  
   botsEnabled: true,
   botMinCount: 14,
   botMaxCount: 34,
@@ -79,6 +87,19 @@ let clients = new Set();
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function getDayString(date = new Date()) {
+  return date.toISOString().split("T")[0];
+}
+
+function getWeekString(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNo}`;
 }
 
 function clamp(value, min, max) {
@@ -133,8 +154,27 @@ function normalizeDb(input) {
   const metricOffsets = safe.metricOffsets && typeof safe.metricOffsets === "object" ? safe.metricOffsets : {};
   const settings = { ...DEFAULT_SETTINGS, ...(safe.settings || {}) };
   settings.roundPauseMs = CRASH_HOLD_MS;
+  
+  const dailyMetrics = safe.dailyMetrics && typeof safe.dailyMetrics === "object" ? safe.dailyMetrics : {};
+  const weeklyMetrics = safe.weeklyMetrics && typeof safe.weeklyMetrics === "object" ? safe.weeklyMetrics : {};
+  const playerRtpStats = safe.playerRtpStats && typeof safe.playerRtpStats === "object" ? safe.playerRtpStats : {};
+
   return {
     settings,
+    waterBudgetCents: Number.isFinite(safe.waterBudgetCents) ? safe.waterBudgetCents : 0,
+    dailyMetrics: {
+      dateString: dailyMetrics.dateString || getDayString(),
+      humanBetCents: Number.isFinite(dailyMetrics.humanBetCents) ? dailyMetrics.humanBetCents : 0,
+      humanPayoutCents: Number.isFinite(dailyMetrics.humanPayoutCents) ? dailyMetrics.humanPayoutCents : 0,
+      rounds: Number.isFinite(dailyMetrics.rounds) ? dailyMetrics.rounds : 0
+    },
+    weeklyMetrics: {
+      weekString: weeklyMetrics.weekString || getWeekString(),
+      humanBetCents: Number.isFinite(weeklyMetrics.humanBetCents) ? weeklyMetrics.humanBetCents : 0,
+      humanPayoutCents: Number.isFinite(weeklyMetrics.humanPayoutCents) ? weeklyMetrics.humanPayoutCents : 0,
+      rounds: Number.isFinite(weeklyMetrics.rounds) ? weeklyMetrics.rounds : 0
+    },
+    playerRtpStats,
     players: safe.players && typeof safe.players === "object" ? safe.players : {},
     rounds: Array.isArray(safe.rounds) ? safe.rounds : [],
     metricOffsets: {
@@ -297,25 +337,125 @@ function generateRoundSeed() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-function crashPointFor(serverSeed, nonce, settings = db.settings) {
-  const hmac = crypto.createHmac("sha256", serverSeed).update(String(nonce)).digest("hex");
+function generateHmac(serverSeed, nonce) {
+  return crypto.createHmac("sha256", serverSeed).update(String(nonce)).digest("hex");
+}
+
+function getRandomFromHmac(hmac) {
   const sample = BigInt(`0x${hmac.slice(0, 13)}`);
   const denominator = 0x10000000000000n;
-  let random = Number(sample) / Number(denominator);
-  random = clamp(random, Number.EPSILON, 1 - Number.EPSILON);
-  const instantCrashChance = clamp((settings.instantCrashBps || 0) / 10000, 0, 1);
+  return clamp(Number(sample) / Number(denominator), Number.EPSILON, 1 - Number.EPSILON);
+}
+
+function getRtpState(metrics) {
+  if (!metrics || metrics.humanBetCents === 0) return "正常";
+  const rtpBps = (metrics.humanPayoutCents / metrics.humanBetCents) * 10000;
+  if (rtpBps >= (db.settings.rtpHighThresholdBps || 10000)) return "高";
+  if (rtpBps <= (db.settings.rtpLowThresholdBps || 9000)) return "低";
+  return "正常";
+}
+
+function determineRiskMode() {
+  const weekState = getRtpState(db.weeklyMetrics);
+  const dayState = getRtpState(db.dailyMetrics);
+  
+  let mode = "正常";
+  if (weekState === "高") {
+    if (dayState === "高") mode = "极强收紧";
+    else if (dayState === "正常") mode = "强收紧";
+    else mode = "轻收紧";
+  } else if (weekState === "正常") {
+    if (dayState === "高") mode = "轻收紧";
+    else if (dayState === "低") mode = "轻放水";
+    else mode = "正常";
+  } else if (weekState === "低") {
+    if (dayState === "高") mode = "正常";
+    else if (dayState === "正常") mode = "轻放水";
+    else mode = "强放水";
+  }
+
+  let houseEdgeBps = db.settings.houseEdgeBps || 150;
+  let instantCrashBps = db.settings.instantCrashBps || 150;
+  let maxMultiplier = db.settings.maxCrashMultiplier || 100;
+  let isWater = false;
+
+  switch (mode) {
+    case "正常":
+      houseEdgeBps = 150; instantCrashBps = 150; break;
+    case "轻收紧":
+      houseEdgeBps = 250; instantCrashBps = 250; maxMultiplier = Math.min(20, maxMultiplier); break;
+    case "强收紧":
+      houseEdgeBps = 500; instantCrashBps = 800; maxMultiplier = Math.min(5, maxMultiplier); break;
+    case "极强收紧":
+      houseEdgeBps = 800; instantCrashBps = 1500; maxMultiplier = Math.min(2.5, maxMultiplier); break;
+    case "轻放水":
+      houseEdgeBps = 100; instantCrashBps = 100; isWater = true; break;
+    case "强放水":
+      houseEdgeBps = 50; instantCrashBps = 50; isWater = true; break;
+  }
+  
+  return { mode, houseEdgeBps, instantCrashBps, maxMultiplier, isWater };
+}
+
+function getPersonalHighRtpMode(humanBets) {
+  if (humanBets.length !== 1) return false;
+  const playerId = humanBets[0].playerId;
+  const stats = db.playerRtpStats[playerId];
+  if (!stats || stats.humanBetCents === 0) return false;
+  const rtpBps = (stats.humanPayoutCents / stats.humanBetCents) * 10000;
+  return rtpBps >= (db.settings.personalHighRtpBps || 12000);
+}
+
+function calculateCrashMultiplier(random, totalBetCents, riskParams, isPersonalHighRtp) {
+  let instantCrashChance = clamp((riskParams.instantCrashBps || 0) / 10000, 0, 1);
+  if (isPersonalHighRtp) {
+    instantCrashChance += 0.20; // +20%
+  }
+  
+  if (totalBetCents > 0 && totalBetCents <= 100000) {
+    instantCrashChance = 0;
+  }
 
   if (random < instantCrashChance) {
-    return {
-      multiplier: 1,
-      hmac
-    };
+    return 1.00;
   }
 
   const adjustedRandom = instantCrashChance >= 1
     ? 0
     : (random - instantCrashChance) / (1 - instantCrashChance);
 
+  const houseFactor = clamp(1 - riskParams.houseEdgeBps / 10000, 0.5, 1);
+  const raw = houseFactor / (1 - adjustedRandom);
+  let crash = Math.max(1.01, Math.floor(raw * 100) / 100);
+
+  let mappingMax = riskParams.maxMultiplier;
+  if (isPersonalHighRtp) {
+    mappingMax = Math.min(mappingMax, 2.50);
+  }
+  
+  if (mappingMax <= 2.50) {
+    mappingMax -= (randomInt(0, 150) / 100); 
+    mappingMax = Math.max(1.01, mappingMax);
+  }
+  
+  crash = clamp(crash, 1.01, mappingMax);
+  
+  if (crash > 1.05) {
+     crash -= (randomInt(1, 5) / 100);
+  }
+
+  return Number(crash.toFixed(2));
+}
+
+function crashPointFor(serverSeed, nonce, settings = db.settings) {
+  const hmac = generateHmac(serverSeed, nonce);
+  const random = getRandomFromHmac(hmac);
+  
+  // Create a default crash based on base settings. This will be overridden in applyRiskControlEngine
+  const instantCrashChance = clamp((settings.instantCrashBps || 0) / 10000, 0, 1);
+  if (random < instantCrashChance) return { multiplier: 1.00, hmac };
+
+  const adjustedRandom = instantCrashChance >= 1 ? 0 : (random - instantCrashChance) / (1 - instantCrashChance);
   const houseFactor = clamp(1 - settings.houseEdgeBps / 10000, 0.5, 1);
   const raw = houseFactor / (1 - adjustedRandom);
   const crash = Math.max(1.01, Math.floor(raw * 100) / 100);
@@ -378,15 +518,49 @@ function updateEffectiveCrashMultiplier(reason = "pool") {
   if (!currentRound || currentRound.phase === "crashed") return false;
   const baseCrash = Number(currentRound.randomCrashMultiplier || currentRound.crashMultiplier || 1);
   const humanOpenCents = humanOpenBetCents(currentRound);
-  const cap = humanOpenCents > 0 ? prizePoolCapMultiplier(currentRound) : baseCrash;
+  
+  let cap = db.settings.maxCrashMultiplier || 100;
+  let finalReason = null;
+
+  if (humanOpenCents > 0) {
+    const singlePayoutCap = (db.settings.singlePayoutCapCents || 500000) / humanOpenCents;
+    if (singlePayoutCap < cap) {
+      cap = singlePayoutCap;
+      finalReason = "single_payout_cap";
+    }
+
+    const poolCap = (db.settings.prizePoolCents || 0) / humanOpenCents;
+    if (poolCap < cap) {
+      cap = poolCap;
+      finalReason = "prize_pool_cap";
+    }
+
+    if (currentRound.isWater) {
+      const waterCap = (db.waterBudgetCents + humanOpenCents) / humanOpenCents;
+      if (waterCap < cap) {
+        cap = waterCap;
+        finalReason = "water_budget_cap";
+      }
+    }
+  }
+
+  cap = Math.floor(cap * 100) / 100;
   const nextCrash = Number(Math.min(baseCrash, cap).toFixed(2));
+  
   const wasChanged = currentRound.crashMultiplier !== nextCrash
-    || currentRound.poolCapMultiplier !== cap
-    || currentRound.poolCapped !== (humanOpenCents > 0 && cap < baseCrash);
+    || currentRound.poolCapMultiplier !== cap;
+    
   currentRound.poolCapMultiplier = cap;
   currentRound.crashMultiplier = nextCrash;
-  currentRound.poolCapped = humanOpenCents > 0 && cap < baseCrash;
-  currentRound.poolCapReason = currentRound.poolCapped ? reason : null;
+  
+  if (cap < baseCrash) {
+    currentRound.poolCapped = true;
+    currentRound.poolCapReason = finalReason || reason;
+  } else {
+    currentRound.poolCapped = false;
+    currentRound.poolCapReason = null;
+  }
+  
   return wasChanged;
 }
 
@@ -558,8 +732,27 @@ function createRound() {
   broadcastEvent("round_start", { round: publicRound(), settings: publicSettings() });
 }
 
+function applyRiskControlEngine() {
+  if (!currentRound) return;
+  const humanBets = currentRound.bets.filter(b => !b.isBot && b.status === "open");
+  const totalBetCents = humanBets.reduce((sum, b) => sum + b.amountCents, 0);
+  
+  const riskParams = determineRiskMode();
+  const isPersonalHighRtp = getPersonalHighRtpMode(humanBets);
+  
+  currentRound.riskMode = riskParams.mode;
+  currentRound.isWater = riskParams.isWater;
+  currentRound.isPersonalHighRtp = isPersonalHighRtp;
+  
+  const random = getRandomFromHmac(currentRound.hmac);
+  currentRound.randomCrashMultiplier = calculateCrashMultiplier(random, totalBetCents, riskParams, isPersonalHighRtp);
+  currentRound.crashMultiplier = currentRound.randomCrashMultiplier;
+}
+
 function startFlying() {
   if (!currentRound || currentRound.phase !== "betting") return;
+  applyRiskControlEngine();
+  updateEffectiveCrashMultiplier("risk_engine");
   applyBotOnlyHighFlight();
   currentRound.phase = "flying";
   currentRound.launchAt = Date.now();
@@ -598,6 +791,48 @@ function finishRound() {
   const totalBetCents = humanBets.reduce((sum, bet) => sum + bet.amountCents, 0);
   const totalPayoutCents = humanBets.reduce((sum, bet) => sum + (bet.payoutCents || 0), 0);
 
+  const today = getDayString();
+  const week = getWeekString();
+  if (db.dailyMetrics.dateString !== today) {
+    db.dailyMetrics = { dateString: today, humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+  }
+  db.dailyMetrics.humanBetCents += totalBetCents;
+  db.dailyMetrics.humanPayoutCents += totalPayoutCents;
+  db.dailyMetrics.rounds += 1;
+
+  if (db.weeklyMetrics.weekString !== week) {
+    db.weeklyMetrics = { weekString: week, humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+  }
+  db.weeklyMetrics.humanBetCents += totalBetCents;
+  db.weeklyMetrics.humanPayoutCents += totalPayoutCents;
+  db.weeklyMetrics.rounds += 1;
+
+  for (const bet of humanBets) {
+    if (!db.playerRtpStats[bet.playerId]) {
+      db.playerRtpStats[bet.playerId] = { humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+    }
+    db.playerRtpStats[bet.playerId].humanBetCents += bet.amountCents;
+    db.playerRtpStats[bet.playerId].humanPayoutCents += bet.payoutCents;
+    db.playerRtpStats[bet.playerId].rounds += 1;
+  }
+
+  if (currentRound.isWater && totalPayoutCents > totalBetCents) {
+    const netWin = totalPayoutCents - totalBetCents;
+    db.waterBudgetCents -= netWin;
+    if (db.waterBudgetCents < 0) db.waterBudgetCents = 0;
+    db.settings.prizePoolCents += netWin;
+  }
+
+  const targetPool = db.settings.targetPrizePoolCents || 1000000;
+  if (db.settings.prizePoolCents > targetPool) {
+    const overflow = db.settings.prizePoolCents - targetPool;
+    db.settings.prizePoolCents = targetPool;
+    const waterShare = Math.floor(overflow * 0.30);
+    const profitShare = overflow - waterShare;
+    db.waterBudgetCents += waterShare;
+    db.metricOffsets.houseProfitCents += profitShare;
+  }
+
   db.rounds.unshift({
     id: currentRound.id,
     nonce: currentRound.nonce,
@@ -620,7 +855,7 @@ function finishRound() {
     botCount: botBets.length,
     bets: humanBets.map(publicBet)
   });
-  db.rounds = db.rounds.slice(0, 200);
+  db.rounds = db.rounds.slice(0, MAX_ROUND_HISTORY);
   audit("round.finished", {
     roundId: currentRound.id,
     crashMultiplier: currentRound.crashMultiplier,
@@ -891,6 +1126,315 @@ function adminHistoryRound(round) {
   };
 }
 
+const ADMIN_REPORT_TIME_ZONE = "Asia/Shanghai";
+
+function adminDateKey(value, timeZone = ADMIN_REPORT_TIME_ZONE) {
+  const date = value instanceof Date ? value : new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return adminDateKey(Date.now(), timeZone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value || "01";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function validDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : null;
+}
+
+function shiftDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function weekStartDateKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  const day = date.getUTCDay();
+  const offset = (day + 6) % 7;
+  return shiftDateKey(dateKey, -offset);
+}
+
+function roundReportTime(round) {
+  return round?.crashedAt || round?.startedAt || nowIso();
+}
+
+function emptyReportStats(date = "") {
+  return {
+    date,
+    rounds: 0,
+    totalBetCents: 0,
+    totalPayoutCents: 0,
+    houseProfitCents: 0,
+    humanCount: 0,
+    botCount: 0,
+    uniquePlayers: new Set(),
+    crashSum: 0,
+    minCrash: null,
+    maxCrash: null,
+    wins: 0,
+    losses: 0
+  };
+}
+
+function addRoundToStats(stats, round, totals) {
+  const crash = Number(round?.crashMultiplier || 0);
+  stats.rounds += 1;
+  stats.totalBetCents += totals.totalBet || 0;
+  stats.totalPayoutCents += totals.totalPayout || 0;
+  stats.houseProfitCents += totals.houseProfit || 0;
+  stats.humanCount += totals.humanCount || 0;
+  stats.botCount += totals.botCount || 0;
+  if (Number.isFinite(crash) && crash > 0) {
+    stats.crashSum += crash;
+    stats.minCrash = stats.minCrash === null ? crash : Math.min(stats.minCrash, crash);
+    stats.maxCrash = stats.maxCrash === null ? crash : Math.max(stats.maxCrash, crash);
+  }
+}
+
+function addBetToUserStats(stats, bet, round) {
+  const amountCents = amountToCents(bet.amount) || 0;
+  const payoutCents = amountToCents(bet.payout) || 0;
+  const cashoutMultiplier = Number(bet.cashoutMultiplier || 0);
+  stats.rounds += 1;
+  stats.totalBetCents += amountCents;
+  stats.totalPayoutCents += payoutCents;
+  stats.netCents += payoutCents - amountCents;
+  stats.wins += payoutCents > 0 ? 1 : 0;
+  stats.losses += payoutCents > 0 ? 0 : 1;
+  stats.maxPayoutCents = Math.max(stats.maxPayoutCents, payoutCents);
+  if (Number.isFinite(cashoutMultiplier)) {
+    stats.maxCashoutMultiplier = Math.max(stats.maxCashoutMultiplier, cashoutMultiplier);
+  }
+  const reportTime = roundReportTime(round);
+  if (!stats.lastPlayedAt || new Date(reportTime) > new Date(stats.lastPlayedAt)) {
+    stats.lastPlayedAt = reportTime;
+  }
+}
+
+function finalizeReportStats(stats) {
+  const totalBet = centsToAmount(stats.totalBetCents);
+  const totalPayout = centsToAmount(stats.totalPayoutCents);
+  const houseProfit = centsToAmount(stats.houseProfitCents);
+  const uniquePlayers =
+    stats.uniquePlayers instanceof Set ? stats.uniquePlayers.size : Number(stats.uniquePlayers || 0);
+  return {
+    date: stats.date,
+    rounds: stats.rounds,
+    totalBet,
+    totalPayout,
+    houseProfit,
+    rtp: stats.totalBetCents > 0 ? Number(((stats.totalPayoutCents / stats.totalBetCents) * 100).toFixed(2)) : 0,
+    humanCount: stats.humanCount,
+    botCount: stats.botCount,
+    uniquePlayers,
+    avgCrash: stats.rounds > 0 ? Number((stats.crashSum / stats.rounds).toFixed(2)) : 0,
+    minCrash: stats.minCrash ? Number(stats.minCrash.toFixed(2)) : 0,
+    maxCrash: stats.maxCrash ? Number(stats.maxCrash.toFixed(2)) : 0,
+    wins: stats.wins || 0,
+    losses: stats.losses || 0
+  };
+}
+
+function realRoundBets(round) {
+  return Array.isArray(round?.bets) ? round.bets.filter((bet) => !bet.isBot && bet.playerId) : [];
+}
+
+function buildAdminAnalytics(url) {
+  const today = adminDateKey(Date.now());
+  const defaultFrom = shiftDateKey(today, -89);
+  const dateFrom = validDateKey(url.searchParams.get("dateFrom")) || defaultFrom;
+  const dateTo = validDateKey(url.searchParams.get("dateTo")) || today;
+  const normalizedFrom = dateFrom <= dateTo ? dateFrom : dateTo;
+  const normalizedTo = dateFrom <= dateTo ? dateTo : dateFrom;
+  const playerId = String(url.searchParams.get("playerId") || "").trim();
+  const limit = clamp(Number(url.searchParams.get("limit") || 200), 20, 500);
+  const weekStart = weekStartDateKey(today);
+
+  const dailyMap = new Map();
+  const todayStats = emptyReportStats(today);
+  const weekStats = emptyReportStats("week");
+  const userMap = new Map();
+  const userDailyMap = new Map();
+  const roundRows = [];
+  const userRoundRows = [];
+
+  for (const round of db.rounds || []) {
+    const reportTime = roundReportTime(round);
+    const date = adminDateKey(reportTime);
+    const totals = persistedRoundMoneyTotals(round);
+    const inSelectedRange = date >= normalizedFrom && date <= normalizedTo;
+
+    if (date >= weekStart && date <= today) {
+      addRoundToStats(weekStats, round, totals);
+      for (const bet of realRoundBets(round)) {
+        weekStats.uniquePlayers.add(bet.playerId);
+      }
+    }
+    if (date === today) {
+      addRoundToStats(todayStats, round, totals);
+      for (const bet of realRoundBets(round)) {
+        todayStats.uniquePlayers.add(bet.playerId);
+      }
+    }
+
+    if (!inSelectedRange) continue;
+
+    if (!dailyMap.has(date)) dailyMap.set(date, emptyReportStats(date));
+    const dailyStats = dailyMap.get(date);
+    addRoundToStats(dailyStats, round, totals);
+
+    const bets = realRoundBets(round);
+    let cashedCount = 0;
+    let lostCount = 0;
+    for (const bet of bets) {
+      dailyStats.uniquePlayers.add(bet.playerId);
+      const payoutCents = amountToCents(bet.payout) || 0;
+      cashedCount += payoutCents > 0 ? 1 : 0;
+      lostCount += payoutCents > 0 ? 0 : 1;
+
+      const player = db.players[bet.playerId];
+      const username = bet.username || player?.username || bet.playerId;
+      if (!userMap.has(bet.playerId)) {
+        userMap.set(bet.playerId, {
+          playerId: bet.playerId,
+          username,
+          balance: centsToAmount(player?.balanceCents || 0),
+          rounds: 0,
+          totalBetCents: 0,
+          totalPayoutCents: 0,
+          netCents: 0,
+          wins: 0,
+          losses: 0,
+          maxPayoutCents: 0,
+          maxCashoutMultiplier: 0,
+          lastPlayedAt: null
+        });
+      }
+      addBetToUserStats(userMap.get(bet.playerId), bet, round);
+
+      const userDayKey = `${date}:${bet.playerId}`;
+      if (!userDailyMap.has(userDayKey)) {
+        userDailyMap.set(userDayKey, {
+          date,
+          playerId: bet.playerId,
+          username,
+          rounds: 0,
+          totalBetCents: 0,
+          totalPayoutCents: 0,
+          netCents: 0,
+          wins: 0,
+          losses: 0,
+          maxPayoutCents: 0,
+          maxCashoutMultiplier: 0,
+          lastPlayedAt: null
+        });
+      }
+      addBetToUserStats(userDailyMap.get(userDayKey), bet, round);
+
+      if (playerId && bet.playerId === playerId && userRoundRows.length < limit) {
+        const amountCents = amountToCents(bet.amount) || 0;
+        const payoutCents = amountToCents(bet.payout) || 0;
+        userRoundRows.push({
+          date,
+          roundId: round.id,
+          crashedAt: reportTime,
+          crashMultiplier: Number(round.crashMultiplier || 0),
+          amount: centsToAmount(amountCents),
+          payout: centsToAmount(payoutCents),
+          net: centsToAmount(payoutCents - amountCents),
+          status: bet.status || (payoutCents > 0 ? "cashed" : "lost"),
+          cashoutMultiplier: bet.cashoutMultiplier || null,
+          autoCashout: bet.autoCashout || null
+        });
+      }
+    }
+
+    if (roundRows.length < limit) {
+      roundRows.push({
+        id: round.id,
+        date,
+        crashedAt: reportTime,
+        crashMultiplier: Number(round.crashMultiplier || 0),
+        randomCrashMultiplier: Number(round.randomCrashMultiplier || 0),
+        totalBet: centsToAmount(totals.totalBet),
+        totalPayout: centsToAmount(totals.totalPayout),
+        houseProfit: centsToAmount(totals.houseProfit),
+        rtp: totals.totalBet > 0 ? Number(((totals.totalPayout / totals.totalBet) * 100).toFixed(2)) : 0,
+        humanCount: totals.humanCount || 0,
+        botCount: totals.botCount || 0,
+        cashedCount,
+        lostCount,
+        forced: Boolean(round.forced),
+        poolCapped: Boolean(round.poolCapped),
+        poolCapMultiplier: round.poolCapMultiplier || null,
+        botOnlyHighFlight: Boolean(round.botOnlyHighFlight)
+      });
+    }
+  }
+
+  const daily = [...dailyMap.values()]
+    .map(finalizeReportStats)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const users = [...userMap.values()]
+    .map((item) => ({
+      playerId: item.playerId,
+      username: item.username,
+      balance: item.balance,
+      rounds: item.rounds,
+      totalBet: centsToAmount(item.totalBetCents),
+      totalPayout: centsToAmount(item.totalPayoutCents),
+      net: centsToAmount(item.netCents),
+      rtp: item.totalBetCents > 0 ? Number(((item.totalPayoutCents / item.totalBetCents) * 100).toFixed(2)) : 0,
+      wins: item.wins,
+      losses: item.losses,
+      maxPayout: centsToAmount(item.maxPayoutCents),
+      maxCashoutMultiplier: item.maxCashoutMultiplier,
+      lastPlayedAt: item.lastPlayedAt
+    }))
+    .sort((a, b) => b.totalBet - a.totalBet);
+  const userDaily = [...userDailyMap.values()]
+    .filter((item) => !playerId || item.playerId === playerId)
+    .map((item) => ({
+      date: item.date,
+      playerId: item.playerId,
+      username: item.username,
+      rounds: item.rounds,
+      totalBet: centsToAmount(item.totalBetCents),
+      totalPayout: centsToAmount(item.totalPayoutCents),
+      net: centsToAmount(item.netCents),
+      rtp: item.totalBetCents > 0 ? Number(((item.totalPayoutCents / item.totalBetCents) * 100).toFixed(2)) : 0,
+      wins: item.wins,
+      losses: item.losses,
+      maxPayout: centsToAmount(item.maxPayoutCents),
+      maxCashoutMultiplier: item.maxCashoutMultiplier,
+      lastPlayedAt: item.lastPlayedAt
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.totalBet - a.totalBet)
+    .slice(0, limit);
+
+  return {
+    generatedAt: nowIso(),
+    filters: {
+      dateFrom: normalizedFrom,
+      dateTo: normalizedTo,
+      playerId
+    },
+    summary: {
+      today: finalizeReportStats(todayStats),
+      week: finalizeReportStats(weekStats)
+    },
+    daily,
+    rounds: roundRows,
+    users,
+    userDaily,
+    userRounds: userRoundRows
+  };
+}
+
 function adminSnapshot() {
   const totals = db.rounds.reduce(
     (acc, round) => {
@@ -914,6 +1458,7 @@ function adminSnapshot() {
 
   return {
     now: Date.now(),
+    waterBudget: centsToAmount(db.waterBudgetCents),
     settings: {
       ...db.settings,
       minBet: centsToAmount(db.settings.minBetCents),
@@ -922,7 +1467,9 @@ function adminSnapshot() {
       demoCredit: centsToAmount(db.settings.demoCreditCents),
       prizePool: centsToAmount(db.settings.prizePoolCents),
       botMinBet: centsToAmount(db.settings.botMinBetCents),
-      botMaxBet: centsToAmount(db.settings.botMaxBetCents)
+      botMaxBet: centsToAmount(db.settings.botMaxBetCents),
+      targetPrizePool: centsToAmount(db.settings.targetPrizePoolCents),
+      singlePayoutCap: centsToAmount(db.settings.singlePayoutCapCents)
     },
     metrics: {
       players: playerList.length,
@@ -1318,6 +1865,23 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, adminSnapshot());
   }
 
+  if (route === "GET /api/admin/analytics") {
+    return sendJson(res, 200, buildAdminAnalytics(url));
+  }
+
+  if (route === "POST /api/admin/pool") {
+    const body = await readJson(req);
+    if (typeof body.prizePool === "number") {
+      db.settings.prizePoolCents = amountToCents(body.prizePool);
+    }
+    if (typeof body.waterBudget === "number") {
+      db.waterBudgetCents = amountToCents(body.waterBudget);
+    }
+    saveDb();
+    broadcastEvent("settings_update", { settings: publicSettings() });
+    return sendJson(res, 200, { success: true });
+  }
+
   if (route === "POST /api/admin/settings") {
     const body = await readJson(req);
     const previous = { ...db.settings };
@@ -1330,6 +1894,9 @@ async function handleApi(req, res, url) {
       curveEarlyTargetMs: [10000, 120000],
       curveLateSpeedMs: [3000, 60000],
       botMinCount: [0, 80],
+      rtpHighThresholdBps: [1000, 20000],
+      rtpLowThresholdBps: [1000, 20000],
+      personalHighRtpBps: [1000, 20000],
       botMaxCount: [0, 120],
       botBetIntervalMinMs: [50, 5000],
       botBetIntervalMaxMs: [50, 5000],

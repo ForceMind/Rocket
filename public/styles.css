@@ -1264,12 +1264,69 @@ td small {
   color: var(--muted);
 }
 
+.analytics-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 16px;
+}
+
+.admin-subgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0 16px 16px;
+}
+
+.subsection-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 0 8px;
+}
+
+.subsection-title h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.subsection-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-table-scroll {
+  max-height: 360px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.admin-table-scroll table {
+  min-width: 860px;
+}
+
+.mini-button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: rgba(78, 212, 155, 0.14);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 @media (max-width: 1024px) {
   .admin-layout {
     grid-template-columns: 1fr;
   }
 
   .metric-grid,
+  .analytics-toolbar,
+  .admin-subgrid,
   .round-admin-grid,
   .settings-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1302,6 +1359,8 @@ td small {
   }
 
   .metric-grid,
+  .analytics-toolbar,
+  .admin-subgrid,
   .round-admin-grid,
   .settings-form,
   .inline-form {
@@ -2238,4 +2297,38 @@ body:not(.admin-body) .table-panel .state-lost {
   body:not(.admin-body) .chip-row button span {
     font-size: 10.5px;
   }
+}
+
+/* --- Admin Tabs --- */
+.admin-tabs {
+  display: flex;
+  gap: 1rem;
+  padding: 0 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.admin-tab {
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+.admin-tab:hover {
+  color: var(--text);
+}
+.admin-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
 }

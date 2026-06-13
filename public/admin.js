@@ -4,22 +4,38 @@ const ui = {
   app: $("#adminApp"),
   status: $("#adminStatus"),
   refreshButton: $("#refreshButton"),
+  analyticsRefreshButton: $("#analyticsRefreshButton"),
   metricPlayers: $("#metricPlayers"),
   metricOnline: $("#metricOnline"),
   metricBet: $("#metricBet"),
   metricPayout: $("#metricPayout"),
   metricProfit: $("#metricProfit"),
   metricPrizePool: $("#metricPrizePool"),
-  metricCurrentBotCount: $("#metricCurrentBotCount"),
-  metricLiability: $("#metricLiability"),
+  metricWaterBudget: $("#metricWaterBudget"),
+  metricRiskMode: $("#metricRiskMode"),
+  metricTodayRtp: $("#metricTodayRtp"),
+  metricWeekRtp: $("#metricWeekRtp"),
+  metricTodayBet: $("#metricTodayBet"),
+  metricTodayPayout: $("#metricTodayPayout"),
+  analyticsDateFrom: $("#analyticsDateFrom"),
+  analyticsDateTo: $("#analyticsDateTo"),
+  analyticsPlayerSelect: $("#analyticsPlayerSelect"),
+  dailyBody: $("#dailyBody"),
+  userSummaryBody: $("#userSummaryBody"),
+  selectedUserTitle: $("#selectedUserTitle"),
+  userDailyBody: $("#userDailyBody"),
+  userRoundsBody: $("#userRoundsBody"),
+  analyticsRoundCount: $("#analyticsRoundCount"),
+  analyticsRoundsBody: $("#analyticsRoundsBody"),
   adminRoundPhase: $("#adminRoundPhase"),
   adminRoundId: $("#adminRoundId"),
   adminCurrentMultiplier: $("#adminCurrentMultiplier"),
   adminCrashMultiplier: $("#adminCrashMultiplier"),
-  adminPoolCap: $("#adminPoolCap"),
-  adminSeedHash: $("#adminSeedHash"),
+  adminRandomCrashMultiplier: $("#adminRandomCrashMultiplier"),
+  adminPoolCapReason: $("#adminPoolCapReason"),
   prizePoolForm: $("#prizePoolForm"),
   prizePoolInput: $("#prizePoolInput"),
+  waterBudgetInput: $("#waterBudgetInput"),
   prizePoolSave: $("#prizePoolSave"),
   clearMetricsButton: $("#clearMetricsButton"),
   clearRoundsButton: $("#clearRoundsButton"),
@@ -28,16 +44,27 @@ const ui = {
   pauseButton: $("#pauseButton"),
   settingsForm: $("#settingsForm"),
   playerSearch: $("#playerSearch"),
-  playersBody: $("#playersBody"),
-  roundCount: $("#roundCount"),
-  roundsBody: $("#roundsBody")
+  playersBody: $("#playersBody")
 };
 
-let token = "local-dev";
 let state = null;
+let analytics = null;
 let pollTimer = null;
 let settingsDirty = false;
 let settingsSaving = false;
+let analyticsInitialized = false;
+
+function initTabs() {
+  document.querySelectorAll('.admin-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const targetId = tab.getAttribute('data-tab');
+      document.getElementById(targetId).classList.add('active');
+    });
+  });
+}
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("zh-CN", {
@@ -46,8 +73,20 @@ function formatMoney(value) {
   });
 }
 
+function formatRtp(value) {
+  return `${Number(value || 0).toFixed(2)}%`;
+}
+
 function formatMultiplier(value) {
-  return `${Number(value || 1).toFixed(2)}x`;
+  const numeric = Number(value || 0);
+  return numeric > 0 ? `${numeric.toFixed(2)}x` : "-";
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("zh-CN", { hour12: false });
 }
 
 function escapeHtml(value) {
@@ -59,59 +98,69 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function profitColor(value) {
+  return Number(value || 0) >= 0 ? "var(--green)" : "var(--red)";
+}
+
 async function adminApi(path, options = {}) {
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {})
-  };
   const response = await fetch(path, {
     method: options.method || "GET",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
   if (!response.ok) {
-    if (response.status === 401) {
-      lockAdmin();
-    }
     throw new Error(data.error || "请求失败");
   }
   return data;
 }
 
+function buildAnalyticsPath() {
+  const params = new URLSearchParams();
+  if (ui.analyticsDateFrom.value) params.set("dateFrom", ui.analyticsDateFrom.value);
+  if (ui.analyticsDateTo.value) params.set("dateTo", ui.analyticsDateTo.value);
+  if (ui.analyticsPlayerSelect.value) params.set("playerId", ui.analyticsPlayerSelect.value);
+  params.set("limit", "300");
+  return `/api/admin/analytics?${params.toString()}`;
+}
+
 function unlockAdmin() {
   ui.app.classList.remove("locked");
-  ui.status.textContent = "免密";
+  ui.status.textContent = "在线";
   ui.status.classList.add("online");
 }
 
-function lockAdmin() {
-  token = "local-dev";
-  ui.app.classList.add("locked");
-  ui.status.textContent = "离线";
+function lockAdmin(message = "加载失败") {
+  ui.status.textContent = message;
   ui.status.classList.remove("online");
   clearInterval(pollTimer);
 }
 
-async function refresh() {
-  if (!token) return false;
+function startPolling() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(refresh, 2000);
+}
+
+async function refresh(options = {}) {
   if (settingsSaving) return false;
   try {
-    state = await adminApi("/api/admin/overview");
+    const [overviewData, analyticsData] = await Promise.all([
+      adminApi("/api/admin/overview"),
+      adminApi(buildAnalyticsPath())
+    ]);
+    state = overviewData;
+    analytics = analyticsData;
     unlockAdmin();
-    render();
+    render(options);
     return true;
   } catch (error) {
     console.error(error);
-    ui.status.textContent = "加载失败";
-    ui.status.classList.remove("online");
+    lockAdmin(error.message || "加载失败");
     return false;
   }
-}
-
-function startPolling() {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(refresh, 1000);
 }
 
 function phaseText(phase) {
@@ -123,18 +172,31 @@ function phaseText(phase) {
 
 function renderMetrics() {
   const metrics = state?.metrics || {};
+  const today = analytics?.summary?.today || {};
+  const week = analytics?.summary?.week || {};
+  
   ui.metricPlayers.textContent = metrics.players || 0;
   ui.metricOnline.textContent = metrics.onlinePlayers || 0;
   ui.metricBet.textContent = formatMoney(metrics.totalBet);
   ui.metricPayout.textContent = formatMoney(metrics.totalPayout);
   ui.metricProfit.textContent = formatMoney(metrics.houseProfit);
-  ui.metricProfit.style.color = Number(metrics.houseProfit || 0) >= 0 ? "var(--green)" : "var(--red)";
+  ui.metricProfit.style.color = profitColor(metrics.houseProfit);
   ui.metricPrizePool.textContent = formatMoney(metrics.prizePool);
+  
+  ui.metricWaterBudget.textContent = formatMoney(state?.waterBudget);
+  ui.metricRiskMode.textContent = state?.round?.riskMode || "正常";
+  
+  ui.metricTodayRtp.textContent = formatRtp(today.rtp);
+  ui.metricWeekRtp.textContent = formatRtp(week.rtp);
+  ui.metricTodayBet.textContent = formatMoney(today.totalBet);
+  ui.metricTodayPayout.textContent = formatMoney(today.totalPayout);
+  
   if (document.activeElement !== ui.prizePoolInput) {
     ui.prizePoolInput.value = state?.settings?.prizePool ?? metrics.prizePool ?? "";
   }
-  ui.metricCurrentBotCount.textContent = metrics.currentBotCount || 0;
-  ui.metricLiability.textContent = formatMoney(metrics.playerLiability);
+  if (document.activeElement !== ui.waterBudgetInput) {
+    ui.waterBudgetInput.value = state?.waterBudget ?? "";
+  }
 }
 
 function renderRound() {
@@ -143,220 +205,367 @@ function renderRound() {
   ui.adminRoundId.value = round?.id || "-";
   ui.adminCurrentMultiplier.value = formatMultiplier(round?.currentMultiplier || 1);
   ui.adminCrashMultiplier.value = round?.crashMultiplier ? formatMultiplier(round.crashMultiplier) : "-";
-  ui.adminPoolCap.value = round?.poolCapMultiplier ? formatMultiplier(round.poolCapMultiplier) : "-";
-  ui.adminSeedHash.value = round?.seedHash || "-";
+  ui.adminRandomCrashMultiplier.value = round?.randomCrashMultiplier ? formatMultiplier(round.randomCrashMultiplier) : "-";
+  ui.adminPoolCapReason.value = round?.poolCapReason || "无限制";
   ui.pauseButton.textContent = state?.settings?.paused ? "恢复" : "暂停";
 }
 
 function renderSettings(force = false) {
   const settings = state?.settings;
-  if (!settings) return;
-  if (!force && settingsDirty) return;
+  if (!settings || (!force && settingsDirty)) return;
   for (const element of ui.settingsForm.elements) {
     if (!element.name || settings[element.name] === undefined) continue;
     element.value = settings[element.name];
   }
 }
 
-function renderPlayers(force = false) {
-  if (!force && ui.playersBody.contains(document.activeElement)) return;
-  const query = ui.playerSearch.value.trim().toLowerCase();
-  const players = (state?.players || []).filter((player) => {
-    return !query || player.username.toLowerCase().includes(query) || player.id.toLowerCase().includes(query);
-  });
+function renderAnalyticsFilters() {
+  if (!analytics?.filters || analyticsInitialized) return;
+  ui.analyticsDateFrom.value = analytics.filters.dateFrom || "";
+  ui.analyticsDateTo.value = analytics.filters.dateTo || "";
+  analyticsInitialized = true;
+}
 
-  if (players.length === 0) {
-    ui.playersBody.innerHTML = `<tr><td colspan="4">暂无玩家</td></tr>`;
+function renderPlayerSelect() {
+  const selected = ui.analyticsPlayerSelect.value;
+  const players = state?.players || [];
+  ui.analyticsPlayerSelect.innerHTML = [
+    `<option value="">全部玩家</option>`,
+    ...players.map((player) => {
+      const isSelected = player.id === selected ? " selected" : "";
+      return `<option value="${escapeHtml(player.id)}"${isSelected}>${escapeHtml(player.username)} (${escapeHtml(player.id)})</option>`;
+    })
+  ].join("");
+}
+
+function renderDaily() {
+  const rows = analytics?.daily || [];
+  if (rows.length === 0) {
+    ui.dailyBody.innerHTML = `<tr><td colspan="9">暂无每日数据</td></tr>`;
     return;
   }
+  ui.dailyBody.innerHTML = rows
+    .map((item) => `
+      <tr>
+        <td>${escapeHtml(item.date)}</td>
+        <td>${item.rounds || 0}</td>
+        <td>${item.uniquePlayers || 0}</td>
+        <td>${formatMoney(item.totalBet)}</td>
+        <td>${formatMoney(item.totalPayout)}</td>
+        <td>${formatRtp(item.rtp)}</td>
+        <td style="color:${profitColor(item.houseProfit)}">${formatMoney(item.houseProfit)}</td>
+        <td>${formatMultiplier(item.avgCrash)}</td>
+        <td>${formatMultiplier(item.maxCrash)}</td>
+      </tr>
+    `)
+    .join("");
+}
 
-  ui.playersBody.innerHTML = players
-    .map((player) => {
-      return `
+function renderUserSummary() {
+  const rows = analytics?.users || [];
+  if (rows.length === 0) {
+    ui.userSummaryBody.innerHTML = `<tr><td colspan="7">暂无用户数据</td></tr>`;
+    return;
+  }
+  ui.userSummaryBody.innerHTML = rows
+    .slice(0, 80)
+    .map((item) => `
+      <tr>
+        <td><strong>${escapeHtml(item.username)}</strong><br /><small>${escapeHtml(item.playerId)}</small></td>
+        <td>${item.rounds || 0}</td>
+        <td>${formatMoney(item.totalBet)}</td>
+        <td>${formatMoney(item.totalPayout)}</td>
+        <td>${formatRtp(item.rtp)}</td>
+        <td style="color:${profitColor(item.net)}">${formatMoney(item.net)}</td>
+        <td><button class="mini-button" data-user-select="${escapeHtml(item.playerId)}" type="button">查看</button></td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderUserDetails() {
+  const selectedPlayerId = analytics?.filters?.playerId || "";
+  const selectedPlayer = selectedPlayerId
+    ? (state?.players || []).find((player) => player.id === selectedPlayerId)
+    : null;
+  ui.selectedUserTitle.textContent = selectedPlayer
+    ? `${selectedPlayer.username} / ${selectedPlayer.id}`
+    : "全部玩家";
+
+  const dailyRows = analytics?.userDaily || [];
+  if (dailyRows.length === 0) {
+    ui.userDailyBody.innerHTML = `<tr><td colspan="8">暂无按天明细</td></tr>`;
+  } else {
+    ui.userDailyBody.innerHTML = dailyRows
+      .map((item) => `
         <tr>
-          <td>
-            <strong>${escapeHtml(player.username)}</strong><br />
-            <small>${escapeHtml(player.id)}</small>
-          </td>
-          <td>${formatMoney(player.balance)}</td>
-          <td>
-            <div class="credit-control">
-              <input data-credit-input="${escapeHtml(player.id)}" type="number" step="0.01" placeholder="+100 / -50" />
-              <button data-credit-button="${escapeHtml(player.id)}" type="button">应用</button>
-            </div>
-          </td>
-          <td>${player.lastSeenAt ? new Date(player.lastSeenAt).toLocaleString("zh-CN") : "-"}</td>
+          <td>${escapeHtml(item.date)}</td>
+          <td><strong>${escapeHtml(item.username)}</strong><br /><small>${escapeHtml(item.playerId)}</small></td>
+          <td>${item.rounds || 0}</td>
+          <td>${formatMoney(item.totalBet)}</td>
+          <td>${formatMoney(item.totalPayout)}</td>
+          <td>${formatRtp(item.rtp)}</td>
+          <td style="color:${profitColor(item.net)}">${formatMoney(item.net)}</td>
+          <td>${item.wins || 0}/${item.losses || 0}</td>
         </tr>
-      `;
+      `)
+      .join("");
+  }
+
+  const roundRows = analytics?.userRounds || [];
+  if (!selectedPlayerId) {
+    ui.userRoundsBody.innerHTML = `<tr><td colspan="7">请先指定玩家</td></tr>`;
+  } else if (roundRows.length === 0) {
+    ui.userRoundsBody.innerHTML = `<tr><td colspan="7">暂无回合明细</td></tr>`;
+  } else {
+    ui.userRoundsBody.innerHTML = roundRows
+      .map((item) => `
+        <tr>
+          <td>${formatDateTime(item.createdAt)}</td>
+          <td>${escapeHtml(item.roundId)}</td>
+          <td>${formatMultiplier(item.crashMultiplier)}</td>
+          <td>${formatMoney(item.amount)}</td>
+          <td>${item.payout ? formatMoney(item.payout) : "-"}</td>
+          <td style="color:${profitColor(item.payout ? item.payout - item.amount : -item.amount)}">
+            ${formatMoney(item.payout ? item.payout - item.amount : -item.amount)}
+          </td>
+          <td><span class="state-${item.status}">${item.status === "cashed" ? "已逃脱" : "已坠毁"}</span></td>
+        </tr>
+      `)
+      .join("");
+  }
+}
+
+function renderAnalyticsRounds() {
+  const rows = analytics?.rounds || [];
+  ui.analyticsRoundCount.textContent = `${rows.length} 局`;
+  if (rows.length === 0) {
+    ui.analyticsRoundsBody.innerHTML = `<tr><td colspan="10">暂无回合数据</td></tr>`;
+    return;
+  }
+  ui.analyticsRoundsBody.innerHTML = rows
+    .map((item) => {
+      const isLive = !item.crashedAt;
+      return `
+      <tr>
+        <td>${formatDateTime(item.createdAt)}</td>
+        <td>${escapeHtml(item.id)}</td>
+        <td>${isLive ? "运行中" : formatMultiplier(item.crashMultiplier)}</td>
+        <td>${formatMultiplier(item.randomCrashMultiplier)}</td>
+        <td>${item.humanCount || 0} / ${item.botCount || 0}</td>
+        <td>${formatMoney(item.humanBet)}</td>
+        <td>${formatMoney(item.humanPayout)}</td>
+        <td>${formatRtp(item.rtp)}</td>
+        <td style="color:${profitColor(item.houseProfit)}">${formatMoney(item.houseProfit)}</td>
+        <td><span class="state-${isLive ? "cashed" : "lost"}">${isLive ? "进行中" : "已结束"}</span></td>
+      </tr>
+    `;
     })
     .join("");
 }
 
-function renderRounds() {
-  const rounds = state?.rounds || [];
-  ui.roundCount.textContent = `${rounds.length} 局`;
-  if (rounds.length === 0) {
-    ui.roundsBody.innerHTML = `<tr><td colspan="7">暂无记录</td></tr>`;
+function renderPlayers() {
+  const players = state?.players || [];
+  const searchTerm = ui.playerSearch.value.trim().toLowerCase();
+  const filtered = players.filter(
+    (p) =>
+      p.username.toLowerCase().includes(searchTerm) ||
+      p.id.toLowerCase().includes(searchTerm)
+  );
+
+  if (filtered.length === 0) {
+    ui.playersBody.innerHTML = `<tr><td colspan="4">未找到玩家</td></tr>`;
     return;
   }
 
-  ui.roundsBody.innerHTML = rounds
-    .map((round) => {
-      const profit = Number(round.houseProfit || 0);
-      const forced = round.forced ? " / forced" : "";
-      const highFlight = round.botOnlyHighFlight ? " / bot-high" : "";
-      return `
-        <tr>
-          <td>${new Date(round.crashedAt).toLocaleString("zh-CN")}</td>
-          <td>${round.humanCount || 0} 真人 / ${round.botCount || 0} 机器人</td>
-          <td>${formatMultiplier(round.crashMultiplier)}</td>
-          <td>${formatMoney(round.totalBet)}</td>
-          <td>${formatMoney(round.totalPayout)}</td>
-          <td style="color:${profit >= 0 ? "var(--green)" : "var(--red)"}">${formatMoney(profit)}</td>
-          <td class="hash-cell">${escapeHtml(round.seedHash)}${forced}${highFlight}</td>
-        </tr>
-      `;
-    })
+  ui.playersBody.innerHTML = filtered
+    .map((p) => `
+      <tr>
+        <td><strong>${escapeHtml(p.username)}</strong><br /><small>${escapeHtml(p.id)}</small></td>
+        <td><strong>${formatMoney(p.balance)}</strong></td>
+        <td>
+          <div class="inline-form" style="display:inline-flex; align-items:center; gap:8px;">
+            <input type="number" step="0.01" style="width: 80px;" id="add_${escapeHtml(p.id)}" placeholder="金额" />
+            <button class="mini-button" onclick="addBalance('${escapeHtml(p.id)}')">加钱</button>
+            <button class="mini-button" onclick="subBalance('${escapeHtml(p.id)}')">扣钱</button>
+          </div>
+        </td>
+        <td>${formatDateTime(p.updatedAt || p.createdAt)}</td>
+      </tr>
+    `)
     .join("");
 }
+
+window.addBalance = async (playerId) => {
+  const amount = Number(document.getElementById(`add_${playerId}`)?.value || 0);
+  if (amount <= 0) return alert("请输入正确金额");
+  if (!confirm(`确定要给 ${playerId} 增加 ${amount} 吗？`)) return;
+  try {
+    await adminApi("/api/admin/player-credit", { method: "POST", body: { playerId, delta: amount } });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.subBalance = async (playerId) => {
+  const amount = Number(document.getElementById(`add_${playerId}`)?.value || 0);
+  if (amount <= 0) return alert("请输入正确金额");
+  if (!confirm(`确定要给 ${playerId} 扣除 ${amount} 吗？`)) return;
+  try {
+    await adminApi("/api/admin/player-credit", { method: "POST", body: { playerId, delta: -amount } });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+};
 
 function render(options = {}) {
   renderMetrics();
   renderRound();
-  renderSettings(Boolean(options.forceSettings));
-  renderPlayers(Boolean(options.forcePlayers));
-  renderRounds();
+  renderSettings(options.forceSettings);
+  renderAnalyticsFilters();
+  if (document.activeElement !== ui.analyticsPlayerSelect) {
+    renderPlayerSelect();
+  }
+  renderDaily();
+  renderUserSummary();
+  renderUserDetails();
+  renderAnalyticsRounds();
+  renderPlayers();
 }
-
-ui.refreshButton.addEventListener("click", refresh);
-
-ui.settingsForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  settingsSaving = true;
-  clearInterval(pollTimer);
-  const payload = {};
-  for (const element of ui.settingsForm.elements) {
-    if (!element.name) continue;
-    payload[element.name] = element.value;
-  }
-  try {
-    state = await adminApi("/api/admin/settings", {
-      method: "POST",
-      body: payload
-    });
-    settingsDirty = false;
-    render({ forceSettings: true });
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    settingsSaving = false;
-    startPolling();
-  }
-});
 
 ui.settingsForm.addEventListener("input", () => {
   settingsDirty = true;
 });
 
-ui.prizePoolForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  settingsSaving = true;
-  ui.prizePoolSave.disabled = true;
-  clearInterval(pollTimer);
+ui.settingsForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const formData = new FormData(ui.settingsForm);
+  const data = {};
+  for (const [key, value] of formData.entries()) {
+    if (key === "betTiers") {
+      data[key] = value;
+    } else {
+      data[key] = Number(value);
+    }
+  }
+
   try {
-    state = await adminApi("/api/admin/settings", {
+    settingsSaving = true;
+    const saveBtn = ui.settingsForm.querySelector("button[type=submit]");
+    saveBtn.textContent = "保存中...";
+    saveBtn.disabled = true;
+
+    await adminApi("/api/admin/settings", {
       method: "POST",
-      body: { prizePool: ui.prizePoolInput.value }
+      body: data
     });
-    render();
-  } catch (error) {
-    alert(error.message);
+
+    settingsDirty = false;
+    await refresh({ forceSettings: true });
+    alert("参数已保存并在下局生效！");
+  } catch (err) {
+    alert(err.message);
   } finally {
-    ui.prizePoolSave.disabled = false;
     settingsSaving = false;
-    startPolling();
+    const saveBtn = ui.settingsForm.querySelector("button[type=submit]");
+    saveBtn.textContent = "保存参数";
+    saveBtn.disabled = false;
   }
 });
 
-async function runMaintenance(action, confirmText, button) {
-  if (!confirm(confirmText)) return;
-  button.disabled = true;
-  clearInterval(pollTimer);
+ui.prizePoolForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const poolVal = Number(ui.prizePoolInput.value);
+  const waterVal = Number(ui.waterBudgetInput.value);
+  
+  if (Number.isNaN(poolVal)) return alert("请输入有效的奖池金额");
+  if (Number.isNaN(waterVal)) return alert("请输入有效的放水金额");
+
+  if (!confirm(`确定保存吗？`)) return;
   try {
-    state = await adminApi("/api/admin/maintenance", {
+    await adminApi("/api/admin/pool", {
       method: "POST",
-      body: { action }
+      body: { prizePool: poolVal, waterBudget: waterVal }
     });
-    render({ forcePlayers: true });
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    button.disabled = false;
-    startPolling();
+    ui.prizePoolInput.blur();
+    ui.waterBudgetInput.blur();
+    await refresh();
+  } catch (err) {
+    alert(err.message);
   }
-}
-
-ui.clearMetricsButton.addEventListener("click", () => {
-  runMaintenance("clear_metrics", "确认清理平台盈亏统计？回合记录和玩家余额不会删除。", ui.clearMetricsButton);
 });
 
-ui.clearRoundsButton.addEventListener("click", () => {
-  runMaintenance("clear_rounds", "确认删除所有历史回合记录？该操作不会删除玩家和当前回合。", ui.clearRoundsButton);
-});
-
-ui.forceForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!confirm("确认强制当前回合爆炸？")) return;
+ui.forceForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const val = Number(ui.forceMultiplier.value);
   try {
-    state = await adminApi("/api/admin/force-crash", {
+    await adminApi("/api/admin/force-crash", {
       method: "POST",
-      body: { multiplier: ui.forceMultiplier.value }
+      body: { multiplier: val || null }
     });
     ui.forceMultiplier.value = "";
-    render({ forcePlayers: true });
-  } catch (error) {
-    alert(error.message);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
   }
 });
 
 ui.pauseButton.addEventListener("click", async () => {
   try {
-    state = await adminApi("/api/admin/pause", {
-      method: "POST",
-      body: { paused: !state?.settings?.paused }
-    });
-    render();
-  } catch (error) {
-    alert(error.message);
+    await adminApi("/api/admin/pause", { method: "POST" });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+ui.clearMetricsButton.addEventListener("click", async () => {
+  if (!confirm("确定要清理全服的平台盈亏和周期统计数据吗？此操作不可撤销，且会重新开始计算 RTP。")) return;
+  try {
+    await adminApi("/api/admin/clear-metrics", { method: "POST" });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+ui.clearRoundsButton.addEventListener("click", async () => {
+  if (!confirm("确定要清理所有回合的历史记录吗？数据看板也将被清空！")) return;
+  try {
+    await adminApi("/api/admin/clear-rounds", { method: "POST" });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+ui.refreshButton.addEventListener("click", () => {
+  refresh({ forceSettings: true });
+});
+
+ui.analyticsRefreshButton.addEventListener("click", () => {
+  refresh();
+});
+
+[ui.analyticsDateFrom, ui.analyticsDateTo, ui.analyticsPlayerSelect].forEach((el) => {
+  el.addEventListener("change", () => {
+    refresh();
+  });
+});
+
+document.addEventListener("click", (e) => {
+  if (e.target.matches("button[data-user-select]")) {
+    const playerId = e.target.getAttribute("data-user-select");
+    ui.analyticsPlayerSelect.value = playerId;
+    refresh();
   }
 });
 
 ui.playerSearch.addEventListener("input", renderPlayers);
 
-ui.playersBody.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-credit-button]");
-  if (!button) return;
-  const playerId = button.dataset.creditButton;
-  const input = ui.playersBody.querySelector(`[data-credit-input="${CSS.escape(playerId)}"]`);
-  const delta = input?.value;
-  if (!delta) return;
-
-  try {
-    button.disabled = true;
-    state = await adminApi("/api/admin/player-credit", {
-      method: "POST",
-      body: { playerId, delta }
-    });
-    render();
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    button.disabled = false;
-  }
+initTabs();
+refresh({ forceSettings: true }).then(() => {
+  startPolling();
 });
-
-refresh()
-  .then((ok) => {
-    if (ok) startPolling();
-  })
-  .catch(lockAdmin);

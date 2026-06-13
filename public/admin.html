@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rocket Admin</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260507-7" />
+    <link rel="stylesheet" href="/styles.css?v=20260613-2" />
   </head>
   <body class="admin-body">
     <div class="app-shell">
@@ -25,160 +25,322 @@
       </header>
 
       <main id="adminApp" class="admin-layout">
-        <section class="metric-grid">
-          <div class="metric"><span>玩家</span><strong id="metricPlayers">0</strong></div>
-          <div class="metric"><span>在线</span><strong id="metricOnline">0</strong></div>
-          <div class="metric"><span>总下注</span><strong id="metricBet">0.00</strong></div>
-          <div class="metric"><span>总返还</span><strong id="metricPayout">0.00</strong></div>
-          <div class="metric"><span>平台盈亏</span><strong id="metricProfit">0.00</strong></div>
-          <div class="metric"><span>奖池余额</span><strong id="metricPrizePool">0.00</strong></div>
-          <div class="metric"><span>本局机器人</span><strong id="metricCurrentBotCount">0</strong></div>
-          <div class="metric"><span>玩家余额</span><strong id="metricLiability">0.00</strong></div>
-        </section>
-        <section class="admin-panel wide compact-help">
-          <p class="section-help">顶部指标用于本地观察整体运营状态：总下注、总返还和平台盈亏只统计真实玩家金额；机器人只统计数量，不计入金额和盈亏。</p>
-        </section>
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-tab="tab-dashboard">数据总览</button>
+          <button class="admin-tab" data-tab="tab-live">游戏控制</button>
+          <button class="admin-tab" data-tab="tab-players">玩家管理</button>
+          <button class="admin-tab" data-tab="tab-finance">资金与奖池</button>
+          <button class="admin-tab" data-tab="tab-settings">参数配置</button>
+        </div>
 
-        <section class="admin-panel">
-          <div class="section-title">
-            <h2>奖池管理</h2>
-            <span>手动设置</span>
-          </div>
-          <p class="section-help">直接设置当前奖池余额。保存后会立即影响本局奖池承受上限，真实玩家下注会继续增加奖池，提现会继续扣减奖池。</p>
-          <form id="prizePoolForm" class="inline-form">
-            <label>
-              <span>奖池余额</span>
-              <input id="prizePoolInput" type="number" step="0.01" min="0" />
-              <small>填写目标余额，不是加减金额。</small>
-            </label>
-            <button id="prizePoolSave" class="primary-button" type="submit">保存奖池</button>
-          </form>
-          <div class="inline-form">
-            <button id="clearMetricsButton" class="ghost-button" type="button">清理平台盈亏</button>
-            <button id="clearRoundsButton" class="danger-button" type="button">清理回合记录</button>
-            <small>清理平台盈亏只把顶部总下注、总返还、平台盈亏归零；清理回合记录会删除历史局记录。</small>
-          </div>
-        </section>
+        <div id="tab-dashboard" class="tab-content active">
+          <section class="metric-grid">
+            <div class="metric"><span>当前风控模式</span><strong id="metricRiskMode" style="color: var(--primary)">正常</strong></div>
+            <div class="metric"><span>放水预算</span><strong id="metricWaterBudget" style="color: var(--green)">0.00</strong></div>
+            <div class="metric"><span>平台盈亏</span><strong id="metricProfit">0.00</strong></div>
+            <div class="metric"><span>奖池余额</span><strong id="metricPrizePool">0.00</strong></div>
+            <div class="metric"><span>今日 RTP</span><strong id="metricTodayRtp">0.00%</strong></div>
+            <div class="metric"><span>本周 RTP</span><strong id="metricWeekRtp">0.00%</strong></div>
+            <div class="metric"><span>今日下注</span><strong id="metricTodayBet">0.00</strong></div>
+            <div class="metric"><span>今日返还</span><strong id="metricTodayPayout">0.00</strong></div>
+            <div class="metric"><span>总下注</span><strong id="metricBet">0.00</strong></div>
+            <div class="metric"><span>总返还</span><strong id="metricPayout">0.00</strong></div>
+            <div class="metric"><span>玩家数</span><strong id="metricPlayers">0</strong></div>
+            <div class="metric"><span>在线数</span><strong id="metricOnline">0</strong></div>
+          </section>
 
-        <section class="admin-panel wide">
-          <div class="section-title">
-            <h2>当前回合</h2>
-            <span id="adminRoundPhase">-</span>
-          </div>
-          <p class="section-help">查看当前局状态、实时倍率、预设爆点和公平性 Hash。强制爆炸只适合本地测试，会把该局标记为人工干预。</p>
-          <div class="round-admin-grid">
-            <label>
-              <span>回合 ID</span>
-              <input id="adminRoundId" readonly />
-            </label>
-            <label>
-              <span>当前倍率</span>
-              <input id="adminCurrentMultiplier" readonly />
-            </label>
-            <label>
-              <span>爆点</span>
-              <input id="adminCrashMultiplier" readonly />
-            </label>
-            <label>
-              <span>奖池承受上限</span>
-              <input id="adminPoolCap" readonly />
-            </label>
-            <label>
-              <span>Hash</span>
-              <input id="adminSeedHash" readonly />
-            </label>
-          </div>
-          <form id="forceForm" class="inline-form">
-            <label>
-              <span>强制爆点</span>
-              <input id="forceMultiplier" type="number" step="0.01" placeholder="当前倍率" />
-              <small>留空表示按当前倍率立即爆炸；填写倍率会把当前局爆点改到该值。</small>
-            </label>
-            <button class="danger-button" type="submit">强制爆炸</button>
-            <button id="pauseButton" class="ghost-button" type="button">暂停</button>
-          </form>
-        </section>
+          <section class="admin-panel wide compact-help">
+            <p class="section-help">
+              金额只统计真人下注和真人返还；机器人只统计数量，不进入平台盈亏、每日数据、用户数据和回合金额。
+            </p>
+          </section>
 
-        <section class="admin-panel">
-          <div class="section-title">
-            <h2>游戏参数</h2>
-            <span>实时生效</span>
-          </div>
-          <p class="section-help">参数保存后写入本地 data/db.json。已开始的回合不会全部重算，下一局会完整使用最新配置。</p>
-          <form id="settingsForm" class="settings-form">
-            <label><span>下注倒计时 ms</span><input name="bettingDurationMs" type="number" /><small>每局开始后允许下注的时间，单位毫秒。</small></label>
-            <label><span>爆炸停留 ms</span><input name="roundPauseMs" type="number" disabled /><small>固定 3000ms。爆炸后先保留本局数据，3 秒后清理并开始新一局下注倒计时。</small></label>
-            <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /><small>玩家端实时状态刷新间隔，数值越小越顺滑。</small></label>
-            <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /><small>真实玩家每局最低下注积分。</small></label>
-            <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /><small>真实玩家每局最高下注积分。</small></label>
-            <label><span>下注档位</span><input name="betTiers" type="text" /><small>前台筹码档位，用逗号分隔，例如 10,50,100,500。</small></label>
-            <label><span>默认玩家初始金额</span><input name="demoCredit" type="number" step="0.01" /><small>新玩家第一次进入时默认获得的金额，只影响之后新建玩家。</small></label>
-            <label><span>奖池余额</span><input name="prizePool" type="number" step="0.01" /><small>真实玩家下注会进入奖池，提现返还会从奖池扣除。</small></label>
-            <label><span>House edge bps</span><input name="houseEdgeBps" type="number" /><small>平台优势，100 bps 等于 1%。</small></label>
-            <label><span>1.00 爆炸 bps</span><input name="instantCrashBps" type="number" /><small>火箭刚起飞就 1.00x 爆炸的概率，100 bps 等于 1%。</small></label>
-            <label><span>最大倍率</span><input name="maxCrashMultiplier" type="number" /><small>随机爆点不会超过这个上限。</small></label>
-            <label><span>20x 到达时间 ms</span><input name="curveEarlyTargetMs" type="number" /><small>飞行曲线前半段速度。默认 35000，表示约 35 秒到 20x；越大，20x 以前越慢。</small></label>
-            <label><span>20x 前慢启动</span><input name="curveEarlyPower" type="number" step="0.01" /><small>默认 2.4。慢启动幂函数调形，越大，1x 到 5x 越慢。</small></label>
-            <label><span>20x 后加速 ms</span><input name="curveLateSpeedMs" type="number" /><small>默认 12000。20x 后每经过这个时间约乘 e；越小，高倍飞得越快。</small></label>
-            <label><span>机器人最少</span><input name="botMinCount" type="number" /><small>每局至少生成多少个机器人。</small></label>
-            <label><span>机器人最多</span><input name="botMaxCount" type="number" /><small>每局最多生成多少个机器人。</small></label>
-            <label><span>机器人下注最小间隔 ms</span><input name="botBetIntervalMinMs" type="number" /><small>机器人分批下注的最小间隔，单位毫秒。</small></label>
-            <label><span>机器人下注最大间隔 ms</span><input name="botBetIntervalMaxMs" type="number" /><small>机器人分批下注的最大间隔，单位毫秒。间隔越大，下注越分散。</small></label>
-            <label><span>机器人最小下注</span><input name="botMinBet" type="number" step="0.01" /><small>机器人下注随机范围的下限。</small></label>
-            <label><span>机器人最大下注</span><input name="botMaxBet" type="number" step="0.01" /><small>机器人下注随机范围的上限。</small></label>
-            <label><span>纯机器人高飞 bps</span><input name="botOnlyHighFlightBps" type="number" /><small>只有机器人下注时，触发高倍飞行的概率。</small></label>
-            <label><span>高飞最小倍率</span><input name="botOnlyHighFlightMin" type="number" /><small>触发高飞后，随机爆点下限。</small></label>
-            <label><span>高飞最大倍率</span><input name="botOnlyHighFlightMax" type="number" /><small>触发高飞后，随机爆点上限，默认可到 500x。</small></label>
-            <button class="primary-button" type="submit">保存参数</button>
-          </form>
-        </section>
+          <section class="admin-panel wide">
+            <div class="section-title">
+              <h2>数据看板</h2>
+              <button id="analyticsRefreshButton" class="ghost-button" type="button">刷新数据</button>
+            </div>
+            <div class="analytics-toolbar">
+              <label>
+                <span>开始日期</span>
+                <input id="analyticsDateFrom" type="date" />
+              </label>
+              <label>
+                <span>结束日期</span>
+                <input id="analyticsDateTo" type="date" />
+              </label>
+              <label>
+                <span>指定玩家</span>
+                <select id="analyticsPlayerSelect">
+                  <option value="">全部玩家</option>
+                </select>
+              </label>
+            </div>
 
-        <section class="admin-panel">
-          <div class="section-title">
-            <h2>玩家管理</h2>
-            <input id="playerSearch" class="search-input" placeholder="搜索玩家" />
-          </div>
-          <p class="section-help">“余额加减”用于本地测试调整真实玩家积分：输入正数是加积分，输入负数是扣积分。机器人不在这里管理。</p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>玩家</th>
-                  <th>余额</th>
-                  <th>余额加减</th>
-                  <th>最近在线</th>
-                </tr>
-              </thead>
-              <tbody id="playersBody"></tbody>
-            </table>
-          </div>
-        </section>
+            <div class="admin-subgrid">
+              <div>
+                <div class="subsection-title">
+                  <h3>每日数据</h3>
+                  <span>按天汇总真人金额</span>
+                </div>
+                <div class="table-wrap admin-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>日期</th>
+                        <th>局数</th>
+                        <th>玩家</th>
+                        <th>下注</th>
+                        <th>返还</th>
+                        <th>RTP</th>
+                        <th>盈亏</th>
+                        <th>平均爆点</th>
+                        <th>最高爆点</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dailyBody"></tbody>
+                  </table>
+                </div>
+              </div>
 
-        <section class="admin-panel wide">
-          <div class="section-title">
-            <h2>回合记录</h2>
-            <span id="roundCount">0 局</span>
-          </div>
-          <p class="section-help">记录历史爆点、总下注、总返还和平台盈亏。带 forced 的回合是后台强制爆炸，不应作为公平随机局验证。</p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>人数</th>
-                  <th>爆点</th>
-                  <th>下注</th>
-                  <th>返还</th>
-                  <th>盈亏</th>
-                  <th>公平性</th>
-                </tr>
-              </thead>
-              <tbody id="roundsBody"></tbody>
-            </table>
-          </div>
-        </section>
+              <div>
+                <div class="subsection-title">
+                  <h3>用户汇总</h3>
+                  <span>点击查看按天和按局明细</span>
+                </div>
+                <div class="table-wrap admin-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>玩家</th>
+                        <th>局数</th>
+                        <th>下注</th>
+                        <th>返还</th>
+                        <th>RTP</th>
+                        <th>净输赢</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="userSummaryBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-panel wide">
+            <div class="section-title">
+              <h2>用户详细数据</h2>
+              <span id="selectedUserTitle">全部玩家</span>
+            </div>
+            <div class="admin-subgrid">
+              <div>
+                <div class="subsection-title">
+                  <h3>按天明细</h3>
+                  <span>指定玩家时只显示该玩家</span>
+                </div>
+                <div class="table-wrap admin-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>日期</th>
+                        <th>玩家</th>
+                        <th>局数</th>
+                        <th>下注</th>
+                        <th>返还</th>
+                        <th>RTP</th>
+                        <th>净输赢</th>
+                        <th>胜/负</th>
+                      </tr>
+                    </thead>
+                    <tbody id="userDailyBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <div class="subsection-title">
+                  <h3>按局明细</h3>
+                  <span>选择玩家后显示</span>
+                </div>
+                <div class="table-wrap admin-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th>回合</th>
+                        <th>爆点</th>
+                        <th>下注</th>
+                        <th>返还</th>
+                        <th>净输赢</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="userRoundsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-panel wide">
+            <div class="section-title">
+              <h2>每局数据</h2>
+              <span id="analyticsRoundCount">0 局</span>
+            </div>
+            <div class="table-wrap admin-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>回合</th>
+                    <th>爆点</th>
+                    <th>随机爆点</th>
+                    <th>真人/机器人</th>
+                    <th>下注</th>
+                    <th>返还</th>
+                    <th>RTP</th>
+                    <th>盈亏</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody id="analyticsRoundsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-live" class="tab-content">
+          <section class="admin-panel">
+            <div class="section-title">
+              <h2>当前回合</h2>
+              <span id="adminRoundPhase">-</span>
+            </div>
+            <div class="round-admin-grid">
+              <label>
+                <span>回合 ID</span>
+                <input id="adminRoundId" readonly />
+              </label>
+              <label>
+                <span>当前倍率</span>
+                <input id="adminCurrentMultiplier" readonly />
+              </label>
+              <label>
+                <span>最终爆点</span>
+                <input id="adminCrashMultiplier" readonly />
+              </label>
+              <label>
+                <span>自然随机爆点</span>
+                <input id="adminRandomCrashMultiplier" readonly />
+              </label>
+              <label>
+                <span>安全上限原因</span>
+                <input id="adminPoolCapReason" readonly />
+              </label>
+            </div>
+            <form id="forceForm" class="inline-form" style="margin-top: 15px;">
+              <label>
+                <span>强制爆点</span>
+                <input id="forceMultiplier" type="number" step="0.01" placeholder="当前倍率" />
+                <small>留空表示按当前倍率立即爆炸。</small>
+              </label>
+              <button class="danger-button" type="submit">强制爆炸</button>
+              <button id="pauseButton" class="ghost-button" type="button">暂停</button>
+            </form>
+          </section>
+        </div>
+
+        <div id="tab-players" class="tab-content">
+          <section class="admin-panel wide">
+            <div class="section-title">
+              <h2>玩家管理</h2>
+              <input id="playerSearch" class="search-input" placeholder="搜索玩家" />
+            </div>
+            <div class="table-wrap admin-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>玩家</th>
+                    <th>余额</th>
+                    <th>余额加减</th>
+                    <th>最近在线</th>
+                  </tr>
+                </thead>
+                <tbody id="playersBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-finance" class="tab-content">
+          <section class="admin-panel">
+            <div class="section-title">
+              <h2>资金与奖池管理</h2>
+              <span>手动干预资金盘</span>
+            </div>
+            <p class="section-help">
+              直接修改当前奖池余额或放水预算。超额奖池会在每局结束后自动按 70/30 比例转化为利润和放水预算。
+            </p>
+            <form id="prizePoolForm" class="inline-form" style="margin-bottom: 20px;">
+              <label>
+                <span>奖池余额</span>
+                <input id="prizePoolInput" type="number" step="0.01" min="0" />
+              </label>
+              <label>
+                <span>放水预算</span>
+                <input id="waterBudgetInput" type="number" step="0.01" min="0" />
+              </label>
+              <button id="prizePoolSave" class="primary-button" type="submit">保存资金池</button>
+            </form>
+            <div class="inline-form">
+              <button id="clearMetricsButton" class="ghost-button" type="button">清理平台盈亏与周期数据</button>
+              <button id="clearRoundsButton" class="danger-button" type="button">清理回合记录</button>
+              <small>清理后重新开始计算 RTP。</small>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-settings" class="tab-content">
+          <section class="admin-panel wide">
+            <div class="section-title">
+              <h2>参数配置</h2>
+              <span>保存后下局完整生效</span>
+            </div>
+            <form id="settingsForm" class="settings-form">
+              <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">基础设置</h3>
+              <label><span>下注倒计时 ms</span><input name="bettingDurationMs" type="number" /><small>每局允许下注的时间。</small></label>
+              <label><span>爆炸停留 ms</span><input name="roundPauseMs" type="number" disabled /><small>固定 3000ms。</small></label>
+              <label><span>推送频率 ms</span><input name="tickRateMs" type="number" /><small>实时状态刷新间隔。</small></label>
+              <label><span>最小下注</span><input name="minBet" type="number" step="0.01" /><small>真人最低下注。</small></label>
+              <label><span>最大下注</span><input name="maxBet" type="number" step="0.01" /><small>真人最高下注。</small></label>
+              <label><span>下注档位</span><input name="betTiers" type="text" /><small>用逗号分隔。</small></label>
+              <label><span>新玩家初始金额</span><input name="demoCredit" type="number" step="0.01" /><small>只影响之后新建的玩家。</small></label>
+
+              <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">风控核心指标</h3>
+              <label><span>平台基础优势 bps</span><input name="houseEdgeBps" type="number" /><small>正常情况下的优势 (100 = 1%)。</small></label>
+              <label><span>基础 1.00 即爆 bps</span><input name="instantCrashBps" type="number" /><small>正常情况下的即爆率。</small></label>
+              <label><span>最大随机爆点</span><input name="maxCrashMultiplier" type="number" /><small>正常情况下的映射上限。</small></label>
+              <label><span>收紧警戒线 RTP bps</span><input name="rtpHighThresholdBps" type="number" /><small>RTP 大于此值触发收紧 (默认 10000 = 100%)。</small></label>
+              <label><span>放水警戒线 RTP bps</span><input name="rtpLowThresholdBps" type="number" /><small>RTP 小于此值触发放水 (默认 9000 = 90%)。</small></label>
+              <label><span>个人高位 RTP bps</span><input name="personalHighRtpBps" type="number" /><small>个人胜率超此值触发单人防守 (默认 12000 = 120%)。</small></label>
+              
+              <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">资金防线</h3>
+              <label><span>目标奖池界线</span><input name="targetPrizePool" type="number" step="0.01" /><small>奖池超此金额即刻分流利润与放水预算。</small></label>
+              <label><span>单次总赔付上限</span><input name="singlePayoutCap" type="number" step="0.01" /><small>防止单次巨额提现击穿底线。</small></label>
+
+              <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">曲线与机器人</h3>
+              <label><span>20x 到达时间 ms</span><input name="curveEarlyTargetMs" type="number" /><small>越大，20x 前越慢。</small></label>
+              <label><span>前段曲线指数</span><input name="curveEarlyPower" type="number" step="0.01" /><small>越大，起飞初期越慢。</small></label>
+              <label><span>20x 后加速 ms</span><input name="curveLateSpeedMs" type="number" /><small>越小，高倍增长越快。</small></label>
+              <label><span>机器人最少</span><input name="botMinCount" type="number" /><small>每局最少数量。</small></label>
+              <label><span>机器人最多</span><input name="botMaxCount" type="number" /><small>每局最多数量。</small></label>
+              <label><span>纯机器人高飞 bps</span><input name="botOnlyHighFlightBps" type="number" /><small>只有机器人时触发高倍飞行的概率。</small></label>
+              
+              <button class="primary-button" type="submit" style="grid-column: 1 / -1; margin-top: 20px;">保存所有参数</button>
+            </form>
+          </section>
+        </div>
       </main>
     </div>
-    <script src="/admin.js?v=20260509-6"></script>
+    <script src="/admin.js?v=20260613-2"></script>
   </body>
 </html>
