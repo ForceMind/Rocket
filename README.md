@@ -7,7 +7,8 @@ Rocket Crash Platform 是一个本地开发版 Rocket / Crash 多人实时下注
 ## 文档目录
 
 - [团队产品文档](docs/Rocket_PRODUCT_GUIDE.md)：给产品、前端、后端、美术和运营看的大白话说明，覆盖玩法、回合流程、奖池、曲线、机器人、新手引导和验收清单。
-- [服务器逻辑小白版](docs/BEGINNER_SERVER_LOGIC.md)：可直接发给程序员，用于从零制作 Rocket Crash 游戏服务器，逐项说明回合、爆点、奖池、结算、机器人、后台和异常逻辑。
+- [服务器逻辑小白版](docs/Rocket_SERVER_LOGIC.md)：可直接发给程序员，用于从零制作 Rocket Crash 游戏服务器，逐项说明回合、爆点、奖池、结算、机器人、后台和异常逻辑。
+- [动态风控迭代方案](docs/Rocket_RISK_CONTROL_PLAN.md)：说明动态平台优势、即爆调整、单局亏损上限、奖池保护、风险等级和平台赚多后的放水机制。
 - [产品文档](docs/PRODUCT_SPEC.md)：产品定位、用户角色、页面功能、流程、需求范围和验收标准。
 - [技术设计](docs/Rocket_Doc.md)：系统架构、回合状态机、爆点算法、飞行公式、奖池规则和机器人调度。
 - [接口文档](docs/API_REFERENCE.md)：HTTP API、WebSocket 事件、请求响应和错误口径。
