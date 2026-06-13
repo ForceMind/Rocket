@@ -330,12 +330,30 @@
               <label><span>新玩家初始金额</span><input name="demoCredit" type="number" step="0.01" /><small>只影响之后新建的玩家。</small></label>
 
               <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">风控核心指标</h3>
-              <label><span>平台基础优势 bps</span><input name="houseEdgeBps" type="number" /><small>正常情况下的优势 (100 = 1%)。</small></label>
-              <label><span>基础 1.00 即爆 bps</span><input name="instantCrashBps" type="number" /><small>正常情况下的即爆率。</small></label>
-              <label><span>最大随机爆点</span><input name="maxCrashMultiplier" type="number" /><small>正常情况下的映射上限。</small></label>
-              <label><span>收紧警戒线 RTP bps</span><input name="rtpHighThresholdBps" type="number" /><small>RTP 大于此值触发收紧 (默认 10000 = 100%)。</small></label>
-              <label><span>放水警戒线 RTP bps</span><input name="rtpLowThresholdBps" type="number" /><small>RTP 小于此值触发放水 (默认 9000 = 90%)。</small></label>
-              <label><span>个人高位 RTP bps</span><input name="personalHighRtpBps" type="number" /><small>个人胜率超此值触发单人防守 (默认 12000 = 120%)。</small></label>
+              <label><span>小额免控阈值</span><input name="smallBetExemption" type="number" step="0.01" /><small>多人局总下注低于此值走正常。</small></label>
+              <label><span>24h门槛局数</span><input name="min24hRounds" type="number" /><small>达标才开启风控矩阵。</small></label>
+              <label><span>24h门槛金额</span><input name="min24hBet" type="number" step="0.01" /><small>达标才开启风控矩阵。</small></label>
+              <label><span>7天门槛局数</span><input name="min7dRounds" type="number" /><small>达标才开启风控矩阵。</small></label>
+              <label><span>7天门槛金额</span><input name="min7dBet" type="number" step="0.01" /><small>达标才开启风控矩阵。</small></label>
+
+              <label><span>单人防守 RTP bps</span><input name="personalHighRtpBps" type="number" /><small>个人胜率超此值触发单人防守 (12000=120%)。</small></label>
+              <label><span>单人防守即爆率 bps</span><input name="personalDefenderInstantCrashBps" type="number" /><small>单人防守额外即爆率。</small></label>
+              <label><span>单人防守平台优势 bps</span><input name="personalDefenderHouseEdgeBps" type="number" /><small>单人防守平台优势。</small></label>
+              <label><span>单人防守最大爆点</span><input name="personalDefenderMaxMultiplier" type="number" step="0.01" /><small>单人防守最大随机上限。</small></label>
+              
+              <label><span>收紧警戒线 RTP bps</span><input name="rtpHighThresholdBps" type="number" /><small>RTP 大于此值大盘判为高 (默认10000=100%)。</small></label>
+              <label><span>放水警戒线 RTP bps</span><input name="rtpLowThresholdBps" type="number" /><small>RTP 小于此值大盘判为低 (默认9000=90%)。</small></label>
+
+              <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">风控9宫格矩阵 (即爆bps, 优势bps, 最大爆点)</h3>
+              <label><span>极强收紧 (周高/日高)</span><input name="matrix_HH" type="text" placeholder="1500,800,2.5" /><small>格式: 即爆, 优势, 倍率</small></label>
+              <label><span>强收紧 (周高/日中)</span><input name="matrix_HN" type="text" placeholder="800,500,5.0" /><small>格式: 即爆, 优势, 倍率</small></label>
+              <label><span>轻收紧 (周高/日低)</span><input name="matrix_HL" type="text" placeholder="250,250,20.0" /><small>格式: 即爆, 优势, 倍率</small></label>
+              <label><span>轻收紧 (周中/日高)</span><input name="matrix_NH" type="text" placeholder="250,250,20.0" /><small>格式: 即爆, 优势, 倍率</small></label>
+              <label><span>正常 (周中/日中)</span><input name="matrix_NN" type="text" placeholder="150,150,100.0" /><small>基础默认模式。</small></label>
+              <label><span>轻放水 (周中/日低)</span><input name="matrix_NL" type="text" placeholder="100,100,100.0" /><small>放水倍率由预算控制。</small></label>
+              <label><span>正常 (周低/日高)</span><input name="matrix_LH" type="text" placeholder="150,150,100.0" /><small>格式: 即爆, 优势, 倍率</small></label>
+              <label><span>轻放水 (周低/日中)</span><input name="matrix_LN" type="text" placeholder="100,100,100.0" /><small>放水倍率由预算控制。</small></label>
+              <label><span>强放水 (周低/日低)</span><input name="matrix_LL" type="text" placeholder="50,50,100.0" /><small>极端放水情况。</small></label>
               
               <h3 style="grid-column: 1 / -1; margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">资金防线</h3>
               <label><span>目标奖池界线</span><input name="targetPrizePool" type="number" step="0.01" /><small>奖池超此金额即刻分流利润与放水预算。</small></label>

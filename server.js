@@ -47,8 +47,31 @@ const DEFAULT_SETTINGS = {
   poolOverflowWaterRatioBps: 3000, // 30% goes to water budget
   rtpHighThresholdBps: 10000, // >= 100% RTP (Platform losing)
   rtpLowThresholdBps: 9000,   // <= 90% RTP (Platform winning big)
-  personalHighRtpBps: 12000,  // >= 120% (Personal solo limit)
   singlePayoutCapCents: 500000, // 500.00 coins max single payout
+  
+  // New Matrix & Thresholds
+  smallBetExemptionCents: 100000, // <= 1000 coins -> normal mode
+  min24hRounds: 50,
+  min24hBetCents: 100000,
+  min7dRounds: 300,
+  min7dBetCents: 500000,
+  
+  // Single Player Defender
+  personalHighRtpBps: 12000,
+  personalDefenderInstantCrashBps: 1500,
+  personalDefenderHouseEdgeBps: 300,
+  personalDefenderMaxMultiplier: 2.50,
+  
+  // Matrix (9 states: High=H, Normal=N, Low=L) -> [instantCrashBps, houseEdgeBps, maxMultiplier]
+  matrix_HH: [1500, 800, 2.5],
+  matrix_HN: [800, 500, 5.0],
+  matrix_HL: [250, 250, 20.0],
+  matrix_NH: [250, 250, 20.0],
+  matrix_NN: [150, 150, 100.0],
+  matrix_NL: [100, 100, 100.0], // Water
+  matrix_LH: [150, 150, 100.0],
+  matrix_LN: [100, 100, 100.0], // Water
+  matrix_LL: [50, 50, 100.0], // Water
   
   botsEnabled: true,
   botMinCount: 14,
@@ -175,6 +198,7 @@ function normalizeDb(input) {
       humanPayoutCents: Number.isFinite(weeklyMetrics.humanPayoutCents) ? weeklyMetrics.humanPayoutCents : 0,
       rounds: Number.isFinite(weeklyMetrics.rounds) ? weeklyMetrics.rounds : 0
     },
+    hourlyBuckets: Array.isArray(safe.hourlyBuckets) ? safe.hourlyBuckets : [],
     playerRtpStats,
     players: safe.players && typeof safe.players === "object" ? safe.players : {},
     rounds: Array.isArray(safe.rounds) ? safe.rounds : [],
@@ -356,94 +380,97 @@ function getRtpState(metrics) {
   return "正常";
 }
 
+function getRollingMetrics(buckets, hours) {
+  if (!buckets || !buckets.length) return { humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+  const cutoff = new Date(Date.now() - hours * 3600 * 1000).toISOString().slice(0, 13);
+  return buckets.reduce((acc, b) => {
+    if (b.hourString >= cutoff) {
+      acc.humanBetCents += b.humanBetCents;
+      acc.humanPayoutCents += b.humanPayoutCents;
+      acc.rounds += b.rounds;
+    }
+    return acc;
+  }, { humanBetCents: 0, humanPayoutCents: 0, rounds: 0 });
+}
+
+function checkMultiPlayerThresholds() {
+  const stats24h = getRollingMetrics(db.hourlyBuckets, 24);
+  const stats7d = getRollingMetrics(db.hourlyBuckets, 168);
+  if (stats24h.rounds < (db.settings.min24hRounds || 0)) return false;
+  if (stats24h.humanBetCents < (db.settings.min24hBetCents || 0)) return false;
+  if (stats7d.rounds < (db.settings.min7dRounds || 0)) return false;
+  if (stats7d.humanBetCents < (db.settings.min7dBetCents || 0)) return false;
+  return true;
+}
+
 function determineRiskMode() {
-  const weekState = getRtpState(db.weeklyMetrics);
-  const dayState = getRtpState(db.dailyMetrics);
+  const stats24h = getRollingMetrics(db.hourlyBuckets, 24);
+  const stats7d = getRollingMetrics(db.hourlyBuckets, 168);
+  const weekState = getRtpState(stats7d);
+  const dayState = getRtpState(stats24h);
   
-  let mode = "正常";
+  let key = "NN";
   if (weekState === "高") {
-    if (dayState === "高") mode = "极强收紧";
-    else if (dayState === "正常") mode = "强收紧";
-    else mode = "轻收紧";
+    if (dayState === "高") key = "HH";
+    else if (dayState === "正常") key = "HN";
+    else key = "HL";
   } else if (weekState === "正常") {
-    if (dayState === "高") mode = "轻收紧";
-    else if (dayState === "低") mode = "轻放水";
-    else mode = "正常";
+    if (dayState === "高") key = "NH";
+    else if (dayState === "低") key = "NL";
+    else key = "NN";
   } else if (weekState === "低") {
-    if (dayState === "高") mode = "正常";
-    else if (dayState === "正常") mode = "轻放水";
-    else mode = "强放水";
+    if (dayState === "高") key = "LH";
+    else if (dayState === "正常") key = "LN";
+    else key = "LL";
   }
 
-  let houseEdgeBps = db.settings.houseEdgeBps || 150;
-  let instantCrashBps = db.settings.instantCrashBps || 150;
-  let maxMultiplier = db.settings.maxCrashMultiplier || 100;
-  let isWater = false;
+  const modeNames = {
+    HH: "极强收紧", HN: "强收紧", HL: "轻收紧",
+    NH: "轻收紧", NN: "正常", NL: "轻放水",
+    LH: "正常", LN: "轻放水", LL: "强放水"
+  };
+  const mode = modeNames[key] || "正常";
 
-  switch (mode) {
-    case "正常":
-      houseEdgeBps = 150; instantCrashBps = 150; break;
-    case "轻收紧":
-      houseEdgeBps = 250; instantCrashBps = 250; maxMultiplier = Math.min(20, maxMultiplier); break;
-    case "强收紧":
-      houseEdgeBps = 500; instantCrashBps = 800; maxMultiplier = Math.min(5, maxMultiplier); break;
-    case "极强收紧":
-      houseEdgeBps = 800; instantCrashBps = 1500; maxMultiplier = Math.min(2.5, maxMultiplier); break;
-    case "轻放水":
-      houseEdgeBps = 100; instantCrashBps = 100; isWater = true; break;
-    case "强放水":
-      houseEdgeBps = 50; instantCrashBps = 50; isWater = true; break;
-  }
-  
-  return { mode, houseEdgeBps, instantCrashBps, maxMultiplier, isWater };
+  const matrixKey = `matrix_${key}`;
+  const cfg = db.settings[matrixKey] || db.settings.matrix_NN || [150, 150, 100.0];
+  const isWater = (key === "NL" || key === "LN" || key === "LL");
+
+  return {
+    mode,
+    instantCrashBps: cfg[0],
+    houseEdgeBps: cfg[1],
+    maxMultiplier: cfg[2],
+    isWater
+  };
 }
 
 function getPersonalHighRtpMode(humanBets) {
   if (humanBets.length !== 1) return false;
   const playerId = humanBets[0].playerId;
-  const stats = db.playerRtpStats[playerId];
-  if (!stats || stats.humanBetCents === 0) return false;
-  const rtpBps = (stats.humanPayoutCents / stats.humanBetCents) * 10000;
+  const pStats = db.playerRtpStats[playerId];
+  if (!pStats) return false;
+  const stats24h = getRollingMetrics(pStats.hourlyBuckets, 24);
+  if (stats24h.humanBetCents === 0) return false;
+  const rtpBps = (stats24h.humanPayoutCents / stats24h.humanBetCents) * 10000;
   return rtpBps >= (db.settings.personalHighRtpBps || 12000);
 }
 
-function calculateCrashMultiplier(random, totalBetCents, riskParams, isPersonalHighRtp) {
+function calculateCrashMultiplier(random, totalBetCents, riskParams) {
   let instantCrashChance = clamp((riskParams.instantCrashBps || 0) / 10000, 0, 1);
-  if (isPersonalHighRtp) {
-    instantCrashChance += 0.20; // +20%
-  }
-  
-  if (totalBetCents > 0 && totalBetCents <= 100000) {
-    instantCrashChance = 0;
-  }
-
   if (random < instantCrashChance) {
     return 1.00;
   }
 
-  const adjustedRandom = instantCrashChance >= 1
-    ? 0
-    : (random - instantCrashChance) / (1 - instantCrashChance);
-
+  const adjustedRandom = instantCrashChance >= 1 ? 0 : (random - instantCrashChance) / (1 - instantCrashChance);
   const houseFactor = clamp(1 - riskParams.houseEdgeBps / 10000, 0.5, 1);
   const raw = houseFactor / (1 - adjustedRandom);
   let crash = Math.max(1.01, Math.floor(raw * 100) / 100);
 
-  let mappingMax = riskParams.maxMultiplier;
-  if (isPersonalHighRtp) {
-    mappingMax = Math.min(mappingMax, 2.50);
-  }
-  
-  if (mappingMax <= 2.50) {
-    mappingMax -= (randomInt(0, 150) / 100); 
-    mappingMax = Math.max(1.01, mappingMax);
-  }
-  
+  const mappingMax = riskParams.maxMultiplier || 100;
   crash = clamp(crash, 1.01, mappingMax);
   
-  if (crash > 1.05) {
-     crash -= (randomInt(1, 5) / 100);
-  }
+  const deduction = randomInt(1, 9) / 100; 
+  crash = Math.max(1.00, crash - deduction);
 
   return Number(crash.toFixed(2));
 }
@@ -738,15 +765,40 @@ function applyRiskControlEngine() {
   const humanBets = currentRound.bets.filter(b => !b.isBot && b.status === "open");
   const totalBetCents = humanBets.reduce((sum, b) => sum + b.amountCents, 0);
   
-  const riskParams = determineRiskMode();
-  const isPersonalHighRtp = getPersonalHighRtpMode(humanBets);
+  let riskParams;
+  let isPersonalHighRtp = false;
+
+  if (humanBets.length === 0) {
+    riskParams = { mode: "纯机器人", instantCrashBps: db.settings.instantCrashBps, houseEdgeBps: db.settings.houseEdgeBps, maxMultiplier: db.settings.maxCrashMultiplier, isWater: false };
+  } else if (humanBets.length === 1 && getPersonalHighRtpMode(humanBets)) {
+    isPersonalHighRtp = true;
+    riskParams = {
+       mode: "单人防守",
+       instantCrashBps: db.settings.personalDefenderInstantCrashBps || 1500,
+       houseEdgeBps: db.settings.personalDefenderHouseEdgeBps || 300,
+       maxMultiplier: db.settings.personalDefenderMaxMultiplier || 2.50,
+       isWater: false
+    };
+  } else {
+    if (!checkMultiPlayerThresholds() || totalBetCents <= (db.settings.smallBetExemptionCents || 100000)) {
+      const cfg = db.settings.matrix_NN || [150, 150, 100.0];
+      riskParams = { mode: "正常", instantCrashBps: cfg[0], houseEdgeBps: cfg[1], maxMultiplier: cfg[2], isWater: false };
+    } else {
+      riskParams = determineRiskMode();
+    }
+  }
+  
+  if (riskParams.isWater && totalBetCents > 0) {
+    const waterCap = (db.waterBudgetCents + totalBetCents) / totalBetCents;
+    riskParams.maxMultiplier = Math.min(riskParams.maxMultiplier, waterCap);
+  }
   
   currentRound.riskMode = riskParams.mode;
   currentRound.isWater = riskParams.isWater;
   currentRound.isPersonalHighRtp = isPersonalHighRtp;
   
   const random = getRandomFromHmac(currentRound.hmac);
-  currentRound.randomCrashMultiplier = calculateCrashMultiplier(random, totalBetCents, riskParams, isPersonalHighRtp);
+  currentRound.randomCrashMultiplier = calculateCrashMultiplier(random, totalBetCents, riskParams);
   currentRound.crashMultiplier = currentRound.randomCrashMultiplier;
 }
 
@@ -808,13 +860,38 @@ function finishRound() {
   db.weeklyMetrics.humanPayoutCents += totalPayoutCents;
   db.weeklyMetrics.rounds += 1;
 
+  const hourString = new Date().toISOString().slice(0, 13);
+  let bucket = db.hourlyBuckets.find(b => b.hourString === hourString);
+  if (!bucket) {
+    bucket = { hourString, humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+    db.hourlyBuckets.push(bucket);
+    const cutoff7d = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 13);
+    db.hourlyBuckets = db.hourlyBuckets.filter(b => b.hourString >= cutoff7d);
+  }
+  bucket.humanBetCents += totalBetCents;
+  bucket.humanPayoutCents += totalPayoutCents;
+  if (humanBets.length > 0) bucket.rounds += 1;
+
   for (const bet of humanBets) {
     if (!db.playerRtpStats[bet.playerId]) {
-      db.playerRtpStats[bet.playerId] = { humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+      db.playerRtpStats[bet.playerId] = { humanBetCents: 0, humanPayoutCents: 0, rounds: 0, hourlyBuckets: [] };
     }
-    db.playerRtpStats[bet.playerId].humanBetCents += bet.amountCents;
-    db.playerRtpStats[bet.playerId].humanPayoutCents += bet.payoutCents;
-    db.playerRtpStats[bet.playerId].rounds += 1;
+    const pStats = db.playerRtpStats[bet.playerId];
+    pStats.humanBetCents += bet.amountCents;
+    pStats.humanPayoutCents += bet.payoutCents;
+    pStats.rounds += 1;
+    
+    pStats.hourlyBuckets = pStats.hourlyBuckets || [];
+    let pBucket = pStats.hourlyBuckets.find(b => b.hourString === hourString);
+    if (!pBucket) {
+      pBucket = { hourString, humanBetCents: 0, humanPayoutCents: 0, rounds: 0 };
+      pStats.hourlyBuckets.push(pBucket);
+      const cutoff24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 13);
+      pStats.hourlyBuckets = pStats.hourlyBuckets.filter(b => b.hourString >= cutoff24h);
+    }
+    pBucket.humanBetCents += bet.amountCents;
+    pBucket.humanPayoutCents += bet.payoutCents;
+    pBucket.rounds += 1;
   }
 
   if (currentRound.isWater && totalPayoutCents > totalBetCents) {
@@ -1472,7 +1549,10 @@ function adminSnapshot() {
       botMaxBet: centsToAmount(db.settings.botMaxBetCents),
       targetPrizePool: centsToAmount(db.settings.targetPrizePoolCents),
       poolOverflowWaterRatioBps: db.settings.poolOverflowWaterRatioBps,
-      singlePayoutCap: centsToAmount(db.settings.singlePayoutCapCents)
+      singlePayoutCap: centsToAmount(db.settings.singlePayoutCapCents),
+      smallBetExemption: centsToAmount(db.settings.smallBetExemptionCents),
+      min24hBet: centsToAmount(db.settings.min24hBetCents),
+      min7dBet: centsToAmount(db.settings.min7dBetCents)
     },
     metrics: {
       players: playerList.length,
@@ -1906,7 +1986,11 @@ async function handleApi(req, res, url) {
       botBetIntervalMaxMs: [50, 5000],
       botOnlyHighFlightBps: [0, 10000],
       botOnlyHighFlightMin: [2, 1000],
-      botOnlyHighFlightMax: [2, 1000]
+      botOnlyHighFlightMax: [2, 1000],
+      min24hRounds: [0, 1000000],
+      min7dRounds: [0, 1000000],
+      personalDefenderInstantCrashBps: [0, 10000],
+      personalDefenderHouseEdgeBps: [0, 10000]
     };
 
     for (const [key, range] of Object.entries(numericFields)) {
@@ -1924,6 +2008,40 @@ async function handleApi(req, res, url) {
         throw httpError(400, "curveEarlyPower 无效");
       }
       db.settings.curveEarlyPower = Number(clamp(value, 1, 5).toFixed(2));
+    }
+
+    if (body.personalDefenderMaxMultiplier !== undefined) {
+      const val = Number(body.personalDefenderMaxMultiplier);
+      if (!Number.isFinite(val) || val < 1.01) throw httpError(400, "单人防守最大倍率无效");
+      db.settings.personalDefenderMaxMultiplier = Number(val.toFixed(2));
+    }
+
+    const matrixKeys = ["matrix_HH", "matrix_HN", "matrix_HL", "matrix_NH", "matrix_NN", "matrix_NL", "matrix_LH", "matrix_LN", "matrix_LL"];
+    for (const key of matrixKeys) {
+      if (body[key] !== undefined) {
+         if (!Array.isArray(body[key]) || body[key].length !== 3) throw httpError(400, `风控矩阵 ${key} 格式无效`);
+         const [instant, edge, maxm] = body[key].map(Number);
+         if (!Number.isFinite(instant) || instant < 0 || instant > 10000) throw httpError(400, `矩阵 即爆率无效`);
+         if (!Number.isFinite(edge) || edge < 0 || edge > 10000) throw httpError(400, `矩阵 平台优势无效`);
+         if (!Number.isFinite(maxm) || maxm < 1.01) throw httpError(400, `矩阵 最大倍率无效`);
+         db.settings[key] = [Math.round(instant), Math.round(edge), Number(maxm.toFixed(2))];
+      }
+    }
+
+    if (body.smallBetExemption !== undefined) {
+      const cents = amountToCents(body.smallBetExemption);
+      if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "小额免除阈值无效");
+      db.settings.smallBetExemptionCents = cents;
+    }
+    if (body.min24hBet !== undefined) {
+      const cents = amountToCents(body.min24hBet);
+      if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "24h最低金额无效");
+      db.settings.min24hBetCents = cents;
+    }
+    if (body.min7dBet !== undefined) {
+      const cents = amountToCents(body.min7dBet);
+      if (!Number.isInteger(cents) || cents < 0) throw httpError(400, "7d最低金额无效");
+      db.settings.min7dBetCents = cents;
     }
 
     if (body.minBet !== undefined) {
