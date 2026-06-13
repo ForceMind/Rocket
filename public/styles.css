@@ -1179,9 +1179,7 @@ td small {
 }
 
 .admin-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  display: block;
 }
 
 .admin-layout.locked {
@@ -2302,33 +2300,38 @@ body:not(.admin-body) .table-panel .state-lost {
 /* --- Admin Tabs --- */
 .admin-tabs {
   display: flex;
-  gap: 1rem;
-  padding: 0 1rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .admin-tab {
-  padding: 0.75rem 1rem;
-  background: none;
+  padding: 10px 20px;
+  background: transparent;
   border: none;
+  border-radius: 6px;
   color: var(--muted);
   font-weight: 600;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   transition: all 0.2s;
   font-size: 14px;
 }
 .admin-tab:hover {
   color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
 }
 .admin-tab.active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
+  color: var(--bg);
+  background: var(--text);
 }
 .tab-content {
   display: none;
 }
 .tab-content.active {
-  display: block;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
