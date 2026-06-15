@@ -468,10 +468,6 @@ function calculateCrashMultiplier(random, totalBetCents, riskParams) {
 
   const mappingMax = riskParams.maxMultiplier || 100;
   crash = clamp(crash, 1.01, mappingMax);
-  
-  const deduction = randomInt(1, 9) / 100; 
-  crash = Math.max(1.00, crash - deduction);
-
   return Number(crash.toFixed(2));
 }
 
@@ -535,36 +531,44 @@ function humanOpenBetCents(round = currentRound) {
   }, 0);
 }
 
+function humanTotalBetCents(round = currentRound) {
+  if (!round) return 0;
+  return round.bets.reduce((sum, bet) => {
+    if (bet.isBot) return sum;
+    return sum + bet.amountCents;
+  }, 0);
+}
+
 function prizePoolCapMultiplier(round = currentRound, prizePoolCents = db.settings.prizePoolCents) {
-  const openBetCents = humanOpenBetCents(round);
-  if (openBetCents <= 0) return db.settings.maxCrashMultiplier;
-  const cap = Math.floor((prizePoolCents / openBetCents) * 100) / 100;
+  const totalBetCents = humanTotalBetCents(round);
+  if (totalBetCents <= 0) return db.settings.maxCrashMultiplier;
+  const cap = Math.floor((prizePoolCents / totalBetCents) * 100) / 100;
   return Number(clamp(cap, 1, db.settings.maxCrashMultiplier).toFixed(2));
 }
 
 function updateEffectiveCrashMultiplier(reason = "pool") {
   if (!currentRound || currentRound.phase === "crashed") return false;
-  const baseCrash = Number(currentRound.randomCrashMultiplier || currentRound.crashMultiplier || 1);
-  const humanOpenCents = humanOpenBetCents(currentRound);
+  const baseCrash = Number(currentRound.randomCrashMultiplierRaw || currentRound.crashMultiplier || 1);
+  const totalBetCents = humanTotalBetCents(currentRound);
   
   let cap = db.settings.maxCrashMultiplier || 100;
   let finalReason = null;
 
-  if (humanOpenCents > 0) {
-    const singlePayoutCap = (db.settings.singlePayoutCapCents || 500000) / humanOpenCents;
+  if (totalBetCents > 0) {
+    const singlePayoutCap = (db.settings.singlePayoutCapCents || 500000) / totalBetCents;
     if (singlePayoutCap < cap) {
       cap = singlePayoutCap;
       finalReason = "single_payout_cap";
     }
 
-    const poolCap = (db.settings.prizePoolCents || 0) / humanOpenCents;
+    const poolCap = (db.settings.prizePoolCents || 0) / totalBetCents;
     if (poolCap < cap) {
       cap = poolCap;
       finalReason = "prize_pool_cap";
     }
 
     if (currentRound.isWater) {
-      const waterCap = (db.waterBudgetCents + humanOpenCents) / humanOpenCents;
+      const waterCap = (db.waterBudgetCents + totalBetCents) / totalBetCents;
       if (waterCap < cap) {
         cap = waterCap;
         finalReason = "water_budget_cap";
@@ -573,7 +577,12 @@ function updateEffectiveCrashMultiplier(reason = "pool") {
   }
 
   cap = Math.floor(cap * 100) / 100;
-  const nextCrash = Number(Math.min(baseCrash, cap).toFixed(2));
+  let nextCrash = Number(Math.min(baseCrash, cap).toFixed(2));
+  
+  if (currentRound.deduction) {
+    nextCrash = Math.max(1.00, nextCrash - currentRound.deduction);
+    nextCrash = Number(nextCrash.toFixed(2));
+  }
   
   const wasChanged = currentRound.crashMultiplier !== nextCrash
     || currentRound.poolCapMultiplier !== cap;
@@ -798,8 +807,10 @@ function applyRiskControlEngine() {
   currentRound.isPersonalHighRtp = isPersonalHighRtp;
   
   const random = getRandomFromHmac(currentRound.hmac);
-  currentRound.randomCrashMultiplier = calculateCrashMultiplier(random, totalBetCents, riskParams);
-  currentRound.crashMultiplier = currentRound.randomCrashMultiplier;
+  currentRound.deduction = randomInt(1, 9) / 100;
+  currentRound.randomCrashMultiplierRaw = calculateCrashMultiplier(random, totalBetCents, riskParams);
+  currentRound.randomCrashMultiplier = Math.max(1.00, Number((currentRound.randomCrashMultiplierRaw - currentRound.deduction).toFixed(2)));
+  currentRound.crashMultiplier = currentRound.randomCrashMultiplierRaw;
 }
 
 function startFlying() {
@@ -1092,6 +1103,8 @@ function adminRound(round = currentRound) {
   return {
     ...publicRound(round),
     crashMultiplier: round.crashMultiplier,
+    randomCrashMultiplier: round.randomCrashMultiplier,
+    poolCapReason: round.poolCapReason,
     seedHash: round.seedHash,
     serverSeed: round.serverSeed,
     hmac: round.hmac
@@ -2169,6 +2182,7 @@ async function handleApi(req, res, url) {
     const nextCrash = requested
       ? clamp(Number(requested.toFixed(2)), currentMultiplier, maxAllowed)
       : currentMultiplier;
+    currentRound.randomCrashMultiplierRaw = Number(nextCrash.toFixed(2));
     currentRound.randomCrashMultiplier = Number(nextCrash.toFixed(2));
     currentRound.crashMultiplier = Number(nextCrash.toFixed(2));
     currentRound.forced = true;
