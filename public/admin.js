@@ -33,6 +33,8 @@ const ui = {
   adminCrashMultiplier: $("#adminCrashMultiplier"),
   adminRandomCrashMultiplier: $("#adminRandomCrashMultiplier"),
   adminPoolCapReason: $("#adminPoolCapReason"),
+  adminRoundHumanBet: $("#adminRoundHumanBet"),
+  adminRoundBotBet: $("#adminRoundBotBet"),
   prizePoolForm: $("#prizePoolForm"),
   prizePoolInput: $("#prizePoolInput"),
   waterBudgetInput: $("#waterBudgetInput"),
@@ -222,7 +224,13 @@ function renderRound() {
   ui.adminCrashMultiplier.value = round?.crashMultiplier ? formatMultiplier(round.crashMultiplier) : "-";
   ui.adminRandomCrashMultiplier.value = round?.randomCrashMultiplier ? formatMultiplier(round.randomCrashMultiplier) : "-";
   ui.adminPoolCapReason.value = round?.poolCapReason || "无限制";
-  ui.pauseButton.textContent = state?.settings?.paused ? "恢复" : "暂停";
+  
+  const humanBet = (round?.bets || []).filter(b => !b.isBot).reduce((sum, b) => sum + b.amount, 0);
+  const botBet = (round?.bets || []).filter(b => b.isBot).reduce((sum, b) => sum + b.amount, 0);
+  ui.adminRoundHumanBet.value = formatMoney(humanBet);
+  ui.adminRoundBotBet.value = formatMoney(botBet);
+
+  ui.pauseButton.textContent = state?.settings?.paused ? "恢复" : "暂停下局";
 }
 
 function renderSettings(force = false) {
